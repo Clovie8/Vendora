@@ -275,7 +275,7 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
         </div>
 
         {/* RIGHT: TIGHT CART */}
-        <div className="flex-1 lg:flex-none w-full lg:w-[340px] xl:w-[380px] flex flex-col bg-white rounded-xl lg:rounded-2xl border border-slate-200 shadow-sm overflow-hidden shrink-0 min-h-[70vh] lg:min-h-0">
+        <div className="flex-1 lg:flex-none w-full lg:w-[340px] xl:w-[380px] flex flex-col bg-white rounded-xl lg:rounded-2xl border border-slate-200 shadow-sm overflow-hidden shrink-0 min-h-[60vh] lg:min-h-0">
           <div className="p-3 bg-slate-900 text-white flex justify-between items-center shrink-0">
             <h2 className="text-sm font-bold">Purchase Order</h2>
             <span className="bg-blue-600 text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide">{cart.length} Items</span>

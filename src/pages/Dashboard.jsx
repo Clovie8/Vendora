@@ -298,7 +298,7 @@ export default function Dashboard() {
       <InstallAppBanner />
       
       {/* KPI CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <KpiCard title="Total Products" value={data.kpi.total_products} colorClass="border-blue-500 text-blue-600 bg-blue-50" icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>} />
         <KpiCard title="Stock Value" value={formatRwf(data.kpi.stock_value)} colorClass="border-slate-500 text-slate-500 bg-slate-100" icon={<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>} />
         {/* Update your Sales Today Card */}

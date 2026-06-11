@@ -244,10 +244,10 @@ export default function StockStatus() {
     <div className="max-w-7xl mx-auto pb-10">
       
       {/* HEADER & CONTROLS */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 mb-6 w-full">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6 w-full">
         <h2 className="text-xl font-bold text-slate-800">Stock Performance Audit</h2>
         
-        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 sm:gap-2 bg-white p-3 sm:p-2 rounded-xl shadow-sm border border-slate-200 section-to-print-hide w-full xl:w-auto">
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 sm:gap-2 bg-white p-3 sm:p-2 rounded-xl shadow-sm border border-slate-200 section-to-print-hide w-full lg:w-auto">
           
           <div className="flex items-center justify-between sm:justify-start gap-2 sm:px-2 w-full sm:w-auto">
             <span className="text-xs font-bold text-slate-400 uppercase w-10 sm:w-auto">From</span>

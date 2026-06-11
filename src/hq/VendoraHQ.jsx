@@ -271,7 +271,7 @@ export default function VendoraHQ() {
           
           // Since the server already set the $_SESSION variables, 
           // we just open the POS dashboard in a new tab!
-          window.open('http://localhost:5173', '_blank'); 
+          window.open('https://dashboard.vendorapos.app', '_blank'); 
           
         } else {
           Toast.fire({ icon: 'error', title: res.message });

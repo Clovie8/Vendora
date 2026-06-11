@@ -491,23 +491,31 @@ export default function Proformas() {
                   </div>
 
                   {/* Cart Table */}
-                  <div className="mt-4 border border-slate-100 rounded-xl overflow-hidden">
+                  <div className="mt-4 border border-slate-100 rounded-xl overflow-x-auto">
                     <table className="w-full text-left whitespace-nowrap">
                       <thead className="bg-slate-50 border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400">
-                        <tr><th className="px-4 py-2">Item Description</th><th className="px-4 py-2 w-24">Qty</th><th className="px-4 py-2 w-32">Unit Price</th><th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 w-10"></th></tr>
+                        <tr>
+                          <th className="px-4 py-2 min-w-[180px]">Item Description</th>
+                          <th className="px-4 py-2 w-24 min-w-[80px]">Qty</th>
+                          <th className="px-4 py-2 w-32 min-w-[100px]">Unit Price</th>
+                          <th className="px-4 py-2 text-right min-w-[80px]">Total</th>
+                          <th className="px-4 py-2 w-10"></th>
+                        </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {cart.length === 0 ? (<tr><td colSpan="5" className="text-center py-6 text-slate-400 text-xs">No items added to quote yet.</td></tr>) : 
+                        {cart.length === 0 ? (
+                          <tr><td colSpan="5" className="text-center py-6 text-slate-400 text-xs">No items added to quote yet.</td></tr>
+                        ) : 
                         cart.map(item => (
                           <tr key={item.product_id} className="hover:bg-slate-50">
                             <td className="px-4 py-2">
-                              <input type="text" value={item.customDesc} onChange={(e) => setCart(cart.map(i => i.product_id === item.product_id ? {...i, customDesc: e.target.value} : i))} className="w-full bg-transparent border-none outline-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-blue-500 rounded px-1" />
+                              <input type="text" value={item.customDesc} onChange={(e) => setCart(cart.map(i => i.product_id === item.product_id ? {...i, customDesc: e.target.value} : i))} className="w-full min-w-[150px] bg-transparent border-none outline-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-blue-500 rounded px-1" />
                             </td>
                             <td className="px-4 py-2">
-                              <input type="number" min="1" value={item.cartQty} onChange={(e) => updateCartQty(item.product_id, parseInt(e.target.value) || 1)} className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none text-xs font-bold text-center" />
+                              <input type="number" min="1" value={item.cartQty} onChange={(e) => updateCartQty(item.product_id, parseInt(e.target.value) || 1)} className="w-full min-w-[60px] bg-white border border-slate-200 rounded px-2 py-1 outline-none text-xs font-bold text-center" />
                             </td>
                             <td className="px-4 py-2">
-                              <input type="number" min="0" value={item.sell_price} onChange={(e) => updateCartPrice(item.product_id, e.target.value)} className="w-full bg-white border border-slate-200 rounded px-2 py-1 outline-none text-xs font-bold" />
+                              <input type="number" min="0" value={item.sell_price} onChange={(e) => updateCartPrice(item.product_id, e.target.value)} className="w-full min-w-[80px] bg-white border border-slate-200 rounded px-2 py-1 outline-none text-xs font-bold" />
                             </td>
                             <td className="px-4 py-2 text-right font-black text-slate-800 text-xs">
                               {(item.cartQty * item.sell_price).toLocaleString()}
