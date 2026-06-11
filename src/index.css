@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@media print {
+  body { background-color: white !important; }
+  .section-to-print-hide { display: none !important; }
+  /* Hide the sidebar */
+  .w-64 { display: none !important; }
+  /* Hide the top navbar */
+  header { display: none !important; }
+  /* Remove padding from main area for printing */
+  main { padding: 0 !important; margin: 0 !important; }
+}
+
+
+/* =========================================
+   CUSTOM CROSS-BROWSER SCROLLBARS
+   ========================================= */
+
+/* 1. Global styling for Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent; /* Tailwind slate-300 */
+}
+
+/* 2. Global styling for Chrome, Safari, and Edge */
+::-webkit-scrollbar {
+  width: 6px; /* Vertical scrollbar width */
+  height: 6px; /* Horizontal scrollbar height */
+}
+
+::-webkit-scrollbar-track {
+  background: transparent; /* Makes the track invisible */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1; /* Sleek light gray */
+  border-radius: 10px;
+  border: 2px solid transparent; /* Creates padding around the thumb */
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8; /* Darkens slightly when hovered */
+}
+
+/* 3. Dark Theme Scrollbar for your Sidebar */
+.custom-scrollbar {
+  scrollbar-color: #475569 transparent; /* Firefox dark mode */
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #475569; /* Tailwind slate-600 */
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #64748b; /* Tailwind slate-500 */
+}
