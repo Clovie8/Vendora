@@ -42,7 +42,7 @@ export default function Inventory() {
   const fetchProducts = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch(`fetch&search=${search}&page=${page}`);
+      const res = await apiFetch(`fetch?search=${encodeURIComponent(search)}&page=${page}`);
       const list = res.data || res; 
       setProducts(list);
       if (res.total && res.limit) {
@@ -265,7 +265,8 @@ export default function Inventory() {
           <table className="w-full text-left whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 font-semibold">Img</th>
+                <th className="px-6 py-4 font-semibold">#</th>
+                {/* <th className="px-6 py-4 font-semibold">Img</th> */}
                 <th className="px-6 py-4 font-semibold">Product Name</th>
                 <th className="px-6 py-4 font-semibold">SKU</th>
                 <th className="px-6 py-4 font-semibold">Buy Price</th>
@@ -283,13 +284,14 @@ export default function Inventory() {
               ) : (
                 products.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-6 py-3">
+                    <td className="px-6 py-3 font-semibold text-slate-800">{products.indexOf(p) + 1}</td>
+                    {/* <td className="px-6 py-3">
                       {p.image ? (
                         <img src={getImageUrl(p.image)} alt={p.name} className="w-10 h-10 rounded-lg object-cover border border-slate-200" />
                       ) : (
                         <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-200"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"/></svg></div>
                       )}
-                    </td>
+                    </td> */}
                     <td className="px-6 py-3 font-semibold text-slate-800">{p.name}</td>
                     <td className="px-6 py-3 text-slate-500 text-sm">{p.sku}</td>
                     <td className="px-6 py-3 text-slate-700">

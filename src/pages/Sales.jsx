@@ -34,6 +34,11 @@ export default function Sales() {
   // Dropdown State
   const [printDropdownOpen, setPrintDropdownOpen] = useState(null);
 
+  // --- NEW: Invoice Products Modal States (For the Eye Icon) ---
+  const [isProductsModalOpen, setIsProductsModalOpen] = useState(false);
+  const [invoiceProducts, setInvoiceProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+
   useEffect(() => {
     apiFetch('get_company').then(res => { if (res.status === 'success') setBusinessSettings(res.data); });
   }, []);
@@ -69,7 +74,7 @@ export default function Sales() {
   const fetchSales = async () => {
     setLoading(true);
     try {
-      const url = `transaction_history&type=sale&search=${search}&start_date=${startDate}&end_date=${endDate}&page=${page}`;
+      const url = `transaction_history?type=sale&search=${encodeURIComponent(search)}&start_date=${startDate}&end_date=${endDate}&page=${page}`;
       const res = await apiFetch(url);
       setSales(res.data || []);
       if (res.sums) setTotals({ amount: parseFloat(res.sums.total_amount || 0), profit: parseFloat(res.sums.total_profit || 0) });
@@ -101,15 +106,12 @@ export default function Sales() {
 
   const openEditModal = (transaction) => { 
     if (!transaction.receipt_number) {
-      // Fire the SweetAlert Toast at the top right
       Toast.fire({ 
         icon: 'error', 
         title: 'Action Denied: Invoice number not found for this older transaction.' 
       });
-      return; // Stop the function so the modal never opens
+      return; 
     }
-    
-    // If it has a receipt number, open the modal normally
     setEditTransaction(transaction); 
     setIsEditModalOpen(true); 
   };
@@ -120,7 +122,6 @@ export default function Sales() {
     const formData = new FormData();
     formData.append('id', editTransaction.id);
     
-    // Append all the soft data fields (fallback to empty strings if null)
     formData.append('client_name', editTransaction.client_name || '');
     formData.append('client_phone', editTransaction.client_phone || '');
     formData.append('payment_method_used', editTransaction.payment_method_used || '');
@@ -132,7 +133,7 @@ export default function Sales() {
       if (res.status === 'success') {
         Toast.fire({ icon: 'success', title: res.message });
         setIsEditModalOpen(false);
-        fetchSales(); // Refresh the list
+        fetchSales(); 
       } else {
         Swal.fire('Error', res.message, 'error');
       }
@@ -143,30 +144,53 @@ export default function Sales() {
       setIsSubmitting(false);
     }
   };
+
+  // --- NEW FEATURE: Open Products Modal (Eye Icon) ---
+  const openProductsModal = async (invoice) => {
+    setEditTransaction(invoice);
+    setIsProductsModalOpen(true);
+    setProductsLoading(true);
+    
+    try {
+      // CHANGED: Now uses invoice_id=${invoice.id}
+      const res = await apiFetch(`get_invoice_products&invoice_id=${invoice.id}`);
+      if (res.status === 'success') {
+        setInvoiceProducts(res.data || []);
+      }
+    } catch (err) {
+      Toast.fire({ icon: 'error', title: 'Failed to load products' });
+    } finally {
+      setProductsLoading(false);
+    }
+  };
   
   // VAT CALCULATION
   const isVatRegistered = businessSettings?.vat_registered == 1;
   const vatMultiplier = isVatRegistered ? 1 : 1;
 
-  // --- PRINT HELPER ---
-  const getReceiptData = (receiptNo) => {
-    if (!receiptNo) { Swal.fire('Error', 'No receipt number found.', 'error'); return null; }
-    const receiptItems = sales.filter(item => item.receipt_number === receiptNo);
-    if (receiptItems.length === 0) return null;
-    return receiptItems;
+  // --- REFINED PRINT HELPER (NOW ASYNC) ---
+  const fetchReceiptItems = async (invoiceId) => {
+    try {
+      const res = await apiFetch(`get_invoice_products&invoice_id=${invoiceId}`);
+      return res.status === 'success' ? res.data : [];
+    } catch (e) {
+      return [];
+    }
   };
 
   // 1. THERMAL RECEIPT
-  const printThermal = (receiptNo) => {
-    const receiptItems = getReceiptData(receiptNo);
-    if (!receiptItems) return;
+  const printThermal = async (invoice) => {
+    if (!invoice.id) { Swal.fire('Error', 'No invoice ID found.', 'error'); return; }
+    
+    const receiptItems = await fetchReceiptItems(invoice.id);
+    if (!receiptItems || receiptItems.length === 0) return;
 
-    const total = receiptItems.reduce((sum, item) => sum + (item.quantity * item.price_at_time), 0);
-    const clientName = receiptItems[0].client_name || '';
-    const clientPhone = receiptItems[0].client_phone || '';
-    const date = new Date(receiptItems[0].date).toLocaleString();
-    const paymentStatus = receiptItems[0].payment_status;
-    const ebmNumber = receiptItems[0].ebm_number || '';
+    const total = parseFloat(invoice.total_amount || 0);
+    const clientName = invoice.client_name || '';
+    const clientPhone = invoice.client_phone || '';
+    const date = new Date(invoice.date || invoice.created_at).toLocaleString();
+    const paymentStatus = invoice.payment_status;
+    const ebmNumber = invoice.ebm_number || '';
 
     let itemsHtml = '';
     receiptItems.forEach(item => {
@@ -174,14 +198,13 @@ export default function Sales() {
       itemsHtml += `<tr><td style="padding: 5px 0; font-size: 13px;">${item.product_name}${serialsHtml}<br><small style="color:#666">${item.quantity} x Rwf ${Number(item.price_at_time).toLocaleString()}</small></td><td style="text-align: right; padding: 5px 0; font-size: 13px; font-weight: bold;">Rwf ${(item.price_at_time * item.quantity).toLocaleString()}</td></tr>`;
     });
 
-    const isVatRegistered = businessSettings?.vat_registered == 1;
     const vatHtml = isVatRegistered ? `<tr><td>SUBTOTAL (NET):</td><td style="text-align: right;">Rwf ${(total * 0.82).toLocaleString()}</td></tr><tr><td>VAT (18%):</td><td style="text-align: right;">Rwf ${(total * 0.18).toLocaleString()}</td></tr>` : '';
     const logoImg = businessSettings?.logo ? `<img src="http://localhost/stock-manager/backend/public/${businessSettings.logo}" style="max-height: 50px; margin-bottom: 5px;" />` : '';
 
     const printWindow = window.open('', '_blank', 'width=400,height=600');
     printWindow.document.write(`
       <html><head><title>Receipt Archive</title><style>@page { margin: 0; } body { font-family: 'Courier New', Courier, monospace; width: 76mm; padding: 10px; margin: 0; color: #000; background: #fff; } .text-center { text-align: center; } .bold { font-weight: bold; } .header { font-size: 18px; font-weight: bold; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; } .info { font-size: 11px; margin-bottom: 15px; line-height: 1.4; color: #333; } .divider { border-top: 1px dashed #000; margin: 10px 0; } table { width: 100%; border-collapse: collapse; } .totals td { padding: 4px 0; font-size: 13px; } .footer { font-size: 11px; margin-top: 20px; line-height: 1.4; }</style></head><body>
-          <div class="text-center">${logoImg}<div class="header">${businessSettings?.name || "STOCKMGR"}</div><div class="info">Receipt No: ${receiptNo}<br>Date: ${date}${ebmNumber ? '<br>EBM No: ' + ebmNumber : ''}</div></div>
+          <div class="text-center">${logoImg}<div class="header">${businessSettings?.name || "STOCKMGR"}</div><div class="info">Receipt No: ${invoice.receipt_number}<br>Date: ${date}${ebmNumber ? '<br>EBM No: ' + ebmNumber : ''}</div></div>
           ${clientName ? `<div style="font-size: 12px; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px;">Customer: <b>${clientName}</b> ${clientPhone ? `<br>Tel: ${clientPhone}` : ''}</div>` : ''}
           <div class="divider"></div><table><tbody>${itemsHtml}</tbody></table><div class="divider"></div>
           <table class="totals">
@@ -196,20 +219,21 @@ export default function Sales() {
   };
 
   // 2. A4 INVOICE
-  const printA4Invoice = (receiptNo) => {
-    const receiptItems = getReceiptData(receiptNo);
-    if (!receiptItems) return;
+  const printA4Invoice = async (invoice) => {
+    if (!invoice.id) return;
+    
+    const receiptItems = await fetchReceiptItems(invoice.id);
+    if (!receiptItems || receiptItems.length === 0) return;
 
-    const total = receiptItems.reduce((sum, item) => sum + (item.quantity * item.price_at_time), 0);
-    const isVatRegistered = businessSettings?.vat_registered == 1;
+    const total = parseFloat(invoice.total_amount || 0);
     const subtotal = isVatRegistered ? total * (100 / 118) : total;
     const taxAmount = isVatRegistered ? total * (18 /118) : 0;
 
-    const clientName = receiptItems[0].client_name || 'Walk-in Customer';
-    const clientPhone = receiptItems[0].client_phone || '-';
-    const rawDate = new Date(receiptItems[0].date);
+    const clientName = invoice.client_name || 'Walk-in Customer';
+    const clientPhone = invoice.client_phone || '-';
+    const rawDate = new Date(invoice.date || invoice.created_at);
     const printDate = rawDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
-    const ebmNumber = receiptItems[0].ebm_number || '';
+    const ebmNumber = invoice.ebm_number || '';
     
     const logoUrl = businessSettings?.logo ? `http://localhost/stock-manager/backend/public/${businessSettings.logo}` : '';
     const compName = businessSettings?.name || 'YOUR COMPANY LTD';
@@ -236,7 +260,7 @@ export default function Sales() {
     printWindow.document.write(`
       <html>
       <head>
-        <title>Invoice - ${receiptNo}</title>
+        <title>Invoice - ${invoice.receipt_number}</title>
         <style>
           @page { size: A4; margin: 0; }
           body { font-family: 'Arial', sans-serif; color: #000; margin: 0; padding: 8mm 0; box-sizing: border-box; font-size: 12px; }
@@ -284,7 +308,7 @@ export default function Sales() {
             <div class="doc-type">
               <div class="doc-title">INVOICE</div>
               <div class="doc-date">${printDate}</div>
-              <div class="doc-no">${receiptNo}</div>${ebmNumber ? `<div class="doc-no" style="margin-top: 4px; font-size: 11px;">EBM: ${ebmNumber}</div>` : ''}
+              <div class="doc-no">${invoice.receipt_number}</div>${ebmNumber ? `<div class="doc-no" style="margin-top: 4px; font-size: 11px;">EBM: ${ebmNumber}</div>` : ''}
             </div>
           </div>
 
@@ -330,15 +354,17 @@ export default function Sales() {
   };
 
   // 3. A4 DELIVERY NOTE
-  const printDeliveryNote = (receiptNo) => {
-    const receiptItems = getReceiptData(receiptNo);
-    if (!receiptItems) return;
+  const printDeliveryNote = async (invoice) => {
+    if (!invoice.id) return;
+    
+    const receiptItems = await fetchReceiptItems(invoice.id);
+    if (!receiptItems || receiptItems.length === 0) return;
 
-    const clientName = receiptItems[0].client_name || 'Walk-in Customer';
-    const clientPhone = receiptItems[0].client_phone || '-';
-    const rawDate = new Date(receiptItems[0].date);
+    const clientName = invoice.client_name || 'Walk-in Customer';
+    const clientPhone = invoice.client_phone || '-';
+    const rawDate = new Date(invoice.date || invoice.created_at);
     const printDate = rawDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    const ebmNumber = receiptItems[0].ebm_number || '';
+    const ebmNumber = invoice.ebm_number || '';
     
     const logoUrl = businessSettings?.logo ? `http://localhost/stock-manager/backend/public/${businessSettings.logo}` : '';
     const compName = businessSettings?.name || 'YOUR COMPANY LTD';
@@ -364,7 +390,7 @@ export default function Sales() {
     printWindow.document.write(`
       <html>
       <head>
-        <title>Delivery Note - ${receiptNo}</title>
+        <title>Delivery Note - ${invoice.receipt_number}</title>
         <style>
           @page { size: A4; margin: 0; }
           body { font-family: 'Arial', sans-serif; color: #000; margin: 0; padding: 15mm; box-sizing: border-box; font-size: 13px; }
@@ -406,7 +432,7 @@ export default function Sales() {
 
         <table class="grid-table">
           <tr>
-            <td style="width: 50%;">INVOICE N&deg;: ${receiptNo.replace('INV-', '')}${ebmNumber ? `<br/>EBM N&deg;: ${ebmNumber}` : ''}</td>
+            <td style="width: 50%;">INVOICE N&deg;: ${invoice.receipt_number.replace('INV-', '')}${ebmNumber ? `<br/>EBM N&deg;: ${ebmNumber}` : ''}</td>
             <td>Date: ${printDate}</td>
           </tr>
           <tr>
@@ -458,20 +484,6 @@ export default function Sales() {
     printWindow.document.close();
   };
 
-  // --- ADD THIS RIGHT ABOVE return ( ---
-  let groupToggle = false;
-  let lastReceipt = null;
-  
-  const groupedSales = sales.map((r) => {
-    // Every time we see a new receipt number, we flip the background color
-    if (r.receipt_number !== lastReceipt) {
-      groupToggle = !groupToggle;
-      lastReceipt = r.receipt_number;
-    }
-    return { ...r, isAlternateBg: groupToggle };
-  });
-  // ------------------------------------
-
   return (
     <div className="max-w-7xl mx-auto pb-10">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -488,7 +500,7 @@ export default function Sales() {
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
             </div>
-            <input type="text" placeholder="Search product, SKU, or Customer..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+            <input type="text" placeholder="Search Invoice, EBM, product, SKU, or Customer..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
           </div>
           
           <div className="grid grid-cols-[auto_1fr] lg:flex lg:items-center gap-3 w-full lg:w-auto items-center">
@@ -510,14 +522,13 @@ export default function Sales() {
           <table className="w-full text-left whitespace-nowrap min-w-[900px]">
             <thead className="bg-slate-50 text-slate-400 text-[10px] uppercase font-bold tracking-wider border-b border-slate-200">
               <tr>
-                <th className="px-3 py-2.5">Date</th>
-                <th className="px-3 py-2.5">Product</th>
+                <th className="px-3 py-2.5">Date & Invoice</th>
+                <th className="px-3 py-2.5">Products (Summary)</th>
                 <th className="px-3 py-2.5">Customer</th>
                 <th className="px-3 py-2.5">Cashier</th>
-                <th className="px-3 py-2.5">Qty</th>
-                <th className="px-3 py-2.5">Sell Price</th>
-                <th className="px-3 py-2.5">Total</th>
-                <th className="px-3 py-2.5">Profit</th>
+                <th className="px-3 py-2.5">Total Amount</th>
+                <th className="px-3 py-2.5">Amount Paid</th>
+                <th className="px-3 py-2.5">Balance Due</th>
                 <th className="px-3 py-2.5 text-center">Status</th>
                 <th className="px-3 py-2.5 text-right">Action</th>
               </tr>
@@ -525,33 +536,32 @@ export default function Sales() {
             <tbody className="divide-y divide-slate-100">
               {loading ? <tr><td colSpan="11" className="px-6 py-10 text-center"><div className="animate-spin inline-block w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full"></div></td></tr>
               : sales.length === 0 ? <tr><td colSpan="11" className="px-6 py-10 text-center text-slate-400 text-sm">No sales records found.</td></tr>
-              : groupedSales.map((r, index) => {
-                  const { date, time } = formatDateCell(r.date);
-                  const total = (r.quantity * r.price_at_time) * vatMultiplier;
-                  const profit = ((r.price_at_time - r.buy_price) * r.quantity) * vatMultiplier;
+              : sales.map((r) => {
+                  const { date, time } = formatDateCell(r.date || r.created_at);
                   
-                  const rowBgClass = r.isAlternateBg ? 'bg-white' : 'bg-slate-100';
-                  const isLastInGroup = 
-                    index === groupedSales.length - 1 || 
-                    groupedSales[index + 1].receipt_number !== r.receipt_number;
-                  
-                  
-                  const borderClass = isLastInGroup ? 'border-b border-slate-800' : 'border-b border-slate-100/50';
+                  const total = (r.total_amount !== undefined ? parseFloat(r.total_amount) : (r.quantity * r.price_at_time)) * vatMultiplier;
 
                   return (
-                    <tr key={r.id} className={`${rowBgClass} hover:bg-blue-50/30 transition-colors ${borderClass}`}>
+                    <tr key={r.id} className="bg-white hover:bg-slate-50 transition-colors border-b border-slate-100">
                       <td className="px-3 py-2 text-slate-500">
                         <div className="font-bold text-slate-700 text-[11px] leading-tight">{date}</div>
                         <div className="text-[10px]">{time}</div>
-                        <div className="text-[9px] font-bold text-slate-400 mt-1">{r.receipt_number}</div>
+                        <div className="text-[9px] font-bold text-slate-400 mt-1">{r.receipt_number || `#${r.id}`}</div>
                       </td>
-                      <td className="px-3 py-2"><div className="font-bold text-slate-800 text-[11px] truncate max-w-[120px]">{r.product_name}</div><div className="text-[10px] text-slate-400 truncate max-w-[120px]">{r.sku}</div></td>
-                      <td className="px-3 py-2"><div className="font-bold text-slate-700 text-[11px] truncate max-w-[100px]">{r.client_name || 'Walk-in'}</div><div className="text-[10px] text-slate-400">{r.client_phone || '-'}</div></td>
+                      <td className="px-3 py-2">
+                        <div className="font-bold text-slate-800 text-[11px] truncate max-w-[160px]">{r.product_name || 'Multiple Items'}</div>
+                        <div className="text-[9px] font-bold text-slate-400 mt-1">{r.ebm_number || ``}</div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="font-bold text-slate-700 text-[11px] truncate max-w-[100px]">{r.client_name || 'Walk-in'}</div>
+                        <div className="text-[10px] text-slate-400">{r.client_phone || '-'}</div>
+                      </td>
                       <td className="px-3 py-2 font-bold text-blue-600 text-[11px] truncate max-w-[80px]">{r.user_name || 'System'}</td>
-                      <td className="px-3 py-2 font-black text-slate-700 text-xs">{r.quantity}</td>
-                      <td className="px-3 py-2 text-slate-600 text-[11px] font-bold">{formatRwf(r.price_at_time)}</td>
+                      
+                      {/* New Invoice-Level Financials */}
                       <td className="px-3 py-2 font-black text-slate-900 text-xs">{formatRwf(total)}</td>
-                      <td className={`px-3 py-2 font-black text-[11px] ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{profit >= 0 ? '+' : ''}{formatRwf(profit)}</td>
+                      <td className="px-3 py-2 font-black text-emerald-600 text-[11px]">{formatRwf(r.amount_paid || 0)}</td>
+                      <td className="px-3 py-2 font-black text-red-500 text-[11px]">{formatRwf(r.balance_due || 0)}</td>
                       <td className="px-3 py-2 text-center">
                         <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${r.payment_status === 'credit' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                           {r.payment_status || 'Paid'}
@@ -560,7 +570,12 @@ export default function Sales() {
                       <td className="px-3 py-2 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           
-                          {/* --- REFINED PRINT DROPDOWN MENU --- */}
+                          {/* --- NEW: EYE ICON FOR PRODUCTS --- */}
+                          <button onClick={() => openProductsModal(r)} className="text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-1.5 rounded-md border border-transparent hover:border-blue-200 transition-colors" title="View Items">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                          </button>
+
+                          {/* --- PRINT DROPDOWN MENU --- */}
                           <div className="relative flex items-center" onClick={(e) => e.stopPropagation()}>
                             <button 
                               onClick={() => setPrintDropdownOpen(printDropdownOpen === r.id ? null : r.id)}
@@ -570,16 +585,15 @@ export default function Sales() {
                               <svg className={`w-3 h-3 ml-0.5 transition-transform duration-200 ${printDropdownOpen === r.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
                             </button>
 
-                            {/* Notice we changed r.receipt_number to r.id here! */}
                             {printDropdownOpen === r.id && (
                               <div className="absolute right-0 top-[calc(100%+6px)] w-40 bg-white rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.2)] border border-slate-200 py-1.5 z-[9999] flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                                {/* <button onClick={() => { printThermal(r.receipt_number); setPrintDropdownOpen(null); }} className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors border-b border-slate-50">
+                                <button onClick={() => { printThermal(r); setPrintDropdownOpen(null); }} className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors border-b border-slate-50">
                                   Thermal Receipt
-                                </button> */}
-                                <button onClick={() => { printA4Invoice(r.receipt_number); setPrintDropdownOpen(null); }} className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors border-b border-slate-50">
+                                </button>
+                                <button onClick={() => { printA4Invoice(r); setPrintDropdownOpen(null); }} className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors border-b border-slate-50">
                                   A4 Invoice
                                 </button>
-                                <button onClick={() => { printDeliveryNote(r.receipt_number); setPrintDropdownOpen(null); }} className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors">
+                                <button onClick={() => { printDeliveryNote(r); setPrintDropdownOpen(null); }} className="w-full text-left px-4 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors">
                                   A4 Delivery Note
                                 </button>
                               </div>
@@ -644,7 +658,7 @@ export default function Sales() {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-auto max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
             <div className="bg-blue-600 px-5 py-3 flex justify-between items-center text-white shrink-0">
-              <h3 className="text-sm font-bold flex items-center gap-2">Update Receipt Details</h3>
+              <h3 className="text-sm font-bold flex items-center gap-2">Update Invoice Details</h3>
               <button onClick={() => setIsEditModalOpen(false)} className="text-white/80 hover:text-white transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
               </button>
@@ -656,13 +670,13 @@ export default function Sales() {
                 {/* READ ONLY SECTION */}
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 mb-2">
                   <div className="flex justify-between items-start">
-                    <p className="text-xs text-slate-500 font-bold uppercase">Receipt #{editTransaction.receipt_number || editTransaction.id}</p>
+                    <p className="text-xs text-slate-500 font-bold uppercase">Invoice #{editTransaction.receipt_number || editTransaction.id}</p>
                     <span className="bg-slate-200 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase">Locked</span>
                   </div>
-                  <p className="font-bold text-slate-800 text-sm mt-1">{editTransaction.product_name}</p>
-                  <p className="text-xs font-bold text-blue-600 mt-1">Quantity: {editTransaction.quantity}</p>
+                  <p className="font-bold text-slate-800 text-sm mt-1">{editTransaction.product_name || 'Multiple Items'}</p>
+                  <p className="text-xs font-bold text-blue-600 mt-1">Total: {formatRwf(editTransaction.total_amount)}</p>
                   <p className="text-[10px] text-red-500 mt-2 leading-tight">
-                    * Quantities and products are locked for inventory integrity. To modify stock, delete and recreate this transaction.
+                    * Line items and totals are locked for inventory integrity. To modify products, delete and recreate this invoice.
                   </p>
                 </div>
 
@@ -695,6 +709,18 @@ export default function Sales() {
                   </div>
                 </div>
 
+                {(editTransaction.payment_status === 'credit' || editTransaction.payment_status === 'partial') && (
+                  <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-xl">
+                    <label className="block text-[10px] font-bold text-red-600 uppercase mb-1">Payment Deadline Date</label>
+                    <input 
+                      type="date" 
+                      value={editTransaction.deadline_date || ''} 
+                      onChange={(e) => setEditTransaction({...editTransaction, deadline_date: e.target.value})} 
+                      className="w-full px-3 py-2 bg-white border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-sm font-medium text-slate-800" 
+                    />
+                  </div>
+                )}
+
               </div>
 
               <div className="mt-6 flex gap-3 shrink-0">
@@ -707,6 +733,58 @@ export default function Sales() {
           </div>
         </div>
       )}
+
+      {/* --- NEW MODAL 3: VIEW INVOICE PRODUCTS --- */}
+      {isProductsModalOpen && editTransaction && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+              <div>
+                <h3 className="font-black text-slate-800">Invoice Items</h3>
+                <p className="text-xs font-medium text-slate-500 mt-0.5">Invoice #{editTransaction.receipt_number || editTransaction.id}</p>
+              </div>
+              <button onClick={() => setIsProductsModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            
+            <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              {productsLoading ? (
+                <div className="py-12 flex justify-center"><div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full"></div></div>
+              ) : invoiceProducts.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-medium text-sm">No items found for this invoice.</div>
+              ) : (
+                <table className="w-full text-left whitespace-nowrap">
+                  <thead className="bg-white text-slate-400 text-[10px] uppercase font-bold tracking-wider sticky top-0 border-b border-slate-100">
+                    <tr>
+                      <th className="px-6 py-3">Product Name</th>
+                      <th className="px-6 py-3 text-right">Qty</th>
+                      <th className="px-6 py-3 text-right">Unit Price</th>
+                      <th className="px-6 py-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {invoiceProducts.map((p, idx) => {
+                      const total = p.quantity * p.price_at_time;
+                      return (
+                        <tr key={p.id || idx} className="hover:bg-slate-50/50">
+                          <td className="px-6 py-3">
+                            <div className="font-bold text-slate-800 text-xs">{p.product_name}</div>
+                          </td>
+                          <td className="px-6 py-3 text-right text-xs font-bold text-slate-700">{p.quantity}</td>
+                          <td className="px-6 py-3 text-right text-xs text-slate-500">{formatRwf(p.price_at_time)}</td>
+                          <td className="px-6 py-3 text-right font-black text-slate-800">{formatRwf(total)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

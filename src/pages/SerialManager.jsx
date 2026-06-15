@@ -13,7 +13,7 @@ export default function SerialManager() {
   const fetchSerials = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch(`get_serials&search=${search}&status=${filterStatus}`);
+      const res = await apiFetch(`get_serials?search=${encodeURIComponent(search)}&status=${filterStatus}`);
       if (res.status === 'success') {
         setSerials(res.data || []);
       }
@@ -53,7 +53,7 @@ export default function SerialManager() {
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto bg-slate-100 p-1 rounded-xl border border-slate-200">
           <button onClick={() => setFilterStatus('')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${filterStatus === '' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>All</button>
-          <button onClick={() => setFilterStatus('In Stock')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${filterStatus === 'In Stock' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>In Stock</button>
+          <button onClick={() => setFilterStatus('In_Stock')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${filterStatus === 'In_Stock' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>In Stock</button>
           <button onClick={() => setFilterStatus('Sold')} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${filterStatus === 'Sold' ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Sold</button>
         </div>
       </div>
@@ -100,7 +100,7 @@ export default function SerialManager() {
                         {added ? (
                           <>
                             <div className="text-sm font-bold text-slate-600">{added.date}</div>
-                            <div className="text-[10px] text-slate-400">PO: {s.purchase_receipt || `#${s.purchase_transaction_id}`}</div>
+                            <div className="text-[10px] text-slate-400">{s.purchase_receipt || `#${s.purchase_transaction_id}`}</div>
                           </>
                         ) : <span className="text-slate-300">-</span>}
                       </td>
@@ -108,7 +108,7 @@ export default function SerialManager() {
                         {s.status === 'Sold' ? (
                           <>
                             <div className="text-sm font-bold text-slate-800">{s.client_name || 'Walk-in Customer'}</div>
-                            <div className="text-[10px] text-slate-500 font-medium mt-0.5">Sold on: {sold?.date} • INV: {s.sale_receipt || `#${s.sale_transaction_id}`}</div>
+                            <div className="text-[10px] text-slate-500 font-medium mt-0.5">Sold on: {sold?.date} • {s.sale_receipt || `#${s.sale_transaction_id}`}</div>
                           </>
                         ) : (
                           <span className="text-[11px] font-medium text-slate-400 italic flex items-center gap-1">

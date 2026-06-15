@@ -23,7 +23,7 @@ export function getImageUrl(imgStr) {
   if (!imgStr) return null;
   // Make sure the image URL points to the backend if it's a relative path
   if (imgStr.startsWith('uploads/')) {
-    return `https://vendora-htcbbye5c0b3h8gn.southafricanorth-01.azurewebsites.net/backend/public/${imgStr}`;
+    return `https://vendora-htcbbye5c0b3h8gn.southafricanorth-01.azurewebsites.net//backend/public/${imgStr}`;
   }
   return imgStr;
 }

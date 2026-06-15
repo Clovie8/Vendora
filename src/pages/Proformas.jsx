@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiFetch } from '../config/api';
 import Swal from 'sweetalert2';
+import html2pdf from 'html2pdf.js';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 
 const Toast = Swal.mixin({
@@ -96,7 +97,8 @@ export default function Proformas() {
       setStatus(pi.status || 'Draft');
       
       setCart(pi.items.map(i => ({
-        product_id: i.product_id || Date.now(), // Fallback if no product linked
+        row_id: Math.random().toString(36).substring(2, 9), // Inject unique frontend ID
+        product_id: i.product_id, // Keep the real ID (or null) for the database
         customDesc: i.description,
         cartQty: Number(i.quantity),
         sell_price: Number(i.unit_price)
@@ -113,19 +115,24 @@ export default function Proformas() {
     if (existing) {
       setCart(cart.map(item => item.product_id === product.id ? { ...item, cartQty: item.cartQty + 1 } : item));
     } else {
-      setCart([...cart, { product_id: product.id, customDesc: product.name, sell_price: product.sell_price, cartQty: 1 }]);
+      setCart([...cart, { 
+        row_id: Math.random().toString(36).substring(2, 9), 
+        product_id: product.id, 
+        customDesc: product.name, 
+        sell_price: product.sell_price, 
+        cartQty: 1 
+      }]);
     }
-    // We explicitly DO NOT clear the search or close the dropdown here
     Toast.fire({ icon: 'success', title: 'Added to invoice' });
   };
 
-  const updateCartQty = (id, newQty) => {
-    if (newQty < 1) return setCart(cart.filter(item => item.product_id !== id));
-    setCart(cart.map(item => item.product_id === id ? { ...item, cartQty: newQty } : item));
+  const updateCartQty = (rowId, newQty) => {
+    if (newQty < 1) return setCart(cart.filter(item => item.row_id !== rowId));
+    setCart(cart.map(item => item.row_id === rowId ? { ...item, cartQty: newQty } : item));
   };
 
-  const updateCartPrice = (id, newPrice) => {
-    setCart(cart.map(item => item.product_id === id ? { ...item, sell_price: Number(newPrice) } : item));
+  const updateCartPrice = (rowId, newPrice) => {
+    setCart(cart.map(item => item.row_id === rowId ? { ...item, sell_price: Number(newPrice) } : item));
   };
 
   const handleSaveProforma = async () => {
@@ -198,123 +205,176 @@ export default function Proformas() {
   };
 
   // --- A4 PRINT ENGINE ---
-  const handlePrint = async (proformaId) => {
-    const res = await apiFetch(`get_single_proforma&id=${proformaId}`);
-    if (res.status !== 'success') return Toast.fire({ icon: 'error', title: 'Failed to load document.' });
-    
-    const pi = res.data;
-    const items = pi.items;
-    
-    const piDate = new Date(pi.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
-    const logoUrl = businessSettings?.logo ? `http://localhost/stock-manager/backend/public/${businessSettings.logo}` : '';
-    const stampUrl = businessSettings?.stamp_signature ? `http://localhost/stock-manager/backend/public/${businessSettings.stamp_signature}` : '';
-    const compName = businessSettings?.name || 'YOUR COMPANY LTD';
-    
-    let itemsHtml = '';
-    const minRows = 15;
-    for (let i = 0; i < Math.max(items.length, minRows); i++) {
-      if (i < items.length) {
-        itemsHtml += `
-          <tr>
-            <td style="text-align: left; padding-left: 5px;">${items[i].description}</td>
-            <td>${items[i].quantity}</td>
-            <td>${Number(items[i].unit_price).toLocaleString()}</td>
-            <td style="text-align: right; padding-right: 5px;">${Number(items[i].total_price).toLocaleString()}</td>
-          </tr>
-        `;
-      } else {
-        itemsHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`;
-      }
+  // --- SHARED INVOICE GENERATOR ---
+const fetchAndGenerateInvoiceHtml = async (proformaId) => {
+  const res = await apiFetch(`get_single_proforma&id=${proformaId}`);
+  if (res.status !== 'success') {
+    Toast.fire({ icon: 'error', title: 'Failed to load document.' });
+    return null;
+  }
+  
+  const pi = res.data;
+  const items = pi.items;
+  
+  const piDate = new Date(pi.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase();
+  const logoUrl = businessSettings?.logo ? `http://localhost/stock-manager/backend/public/${businessSettings.logo}` : '';
+  const stampUrl = businessSettings?.stamp_signature ? `http://localhost/stock-manager/backend/public/${businessSettings.stamp_signature}` : '';
+  const compName = businessSettings?.name || 'YOUR COMPANY LTD';
+  
+  let itemsHtml = '';
+  const minRows = 15;
+  for (let i = 0; i < Math.max(items.length, minRows); i++) {
+    if (i < items.length) {
+      itemsHtml += `
+        <tr>
+          <td style="text-align: left; padding-left: 5px;">${items[i].description}</td>
+          <td>${items[i].quantity}</td>
+          <td>${Number(items[i].unit_price).toLocaleString()}</td>
+          <td style="text-align: right; padding-right: 5px;">${Number(items[i].total_price).toLocaleString()}</td>
+        </tr>
+      `;
+    } else {
+      itemsHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`;
     }
+  }
 
-    const printWindow = window.open('', '_blank', 'width=800,height=1100');
-    printWindow.document.write(`
-      <html>
-      <head>
-        <title>${pi.proforma_number}</title>
-        <style>
-          @page { size: A4; margin: 10mm 15mm; }
-          body { font-family: 'Arial', sans-serif; color: #000; margin: 0; padding: 0; box-sizing: border-box; font-size: 12px; }
-          .flex { display: flex; }
-          .company-info { flex: 1; padding: 0 15px; }
-          .comp-name { font-weight: bold; font-style: italic; font-size: 14px; margin-bottom: 5px; }
-          .comp-details { font-size: 11px; line-height: 1.6; }
-          .doc-type { width: 220px; text-align: right; }
-          .doc-title { color: #94a3b8; font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; font-size: 14px; }
-          .doc-date { font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; margin-bottom: 10px; }
-          .doc-no { font-weight: bold; color: #334155; }
-          .bill-title { color: #1e3a8a; font-weight: bold; border-bottom: 1px solid #1e3a8a; display: inline-block; padding-bottom: 2px; margin-bottom: 10px; }
-          .client-grid { display: grid; grid-template-columns: 120px 1fr; row-gap: 5px; font-weight: bold; font-size: 11px; }
-          .client-grid span:nth-child(even) { font-weight: normal; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 5px; margin-top: 20px;}
-          th { background-color: #b4c6e7; color: #000; padding: 8px 5px; border: 1px solid #cbd5e1; text-align: center; font-size: 11px; }
-          td { border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; height: 20px; }
-          .footer-grid { display: flex; justify-content: space-between; margin-top: 0px; }
-          .remarks { width: 50%; text-align: center; padding-top: 5px; }
-          .totals-box { width: 35%; border: 1px solid #cbd5e1; border-top: none; }
-          .total-row { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #cbd5e1; font-size: 12px; }
-          .total-row:last-child { border-bottom: none; background-color: #f8cbad; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="flex" style="border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px; align-items: flex-start;">
-          <div style="width: 150px;">
-            ${logoUrl ? `<img src="${logoUrl}" style="max-width: 150px; max-height: 80px;" />` : `<div style="height:60px; background:#f1f5f9; text-align:center; line-height:60px; color:#94a3b8; font-weight:bold;">LOGO</div>`}
-          </div>
-          <div class="company-info">
-            <div class="comp-name">${compName}</div>
-            <div class="comp-details">
-              <b>${businessSettings?.location || 'Rwanda'}</b><br/>
-              Email: <a href="mailto:${businessSettings?.email || ''}">${businessSettings?.email || ''}</a><br/>
-              Tel: <a href="tel:${businessSettings?.phone || ''}">${businessSettings?.phone || ''}</a><br/>
-              <b>TIN: ${businessSettings?.tin_number || ''}</b><br/>
-              <b>A/C: ${businessSettings?.bank_account || ''} / ${businessSettings?.bank_name || ''}</b>
-            </div>
-          </div>
-          <div class="doc-type">
-            <div class="doc-title">PROFORMA INVOICE</div>
-            <div class="doc-date">${piDate}</div>
-            <div class="doc-no">PROFORMA INVOICE NO. ${pi.proforma_number.split('-')[1]}</div>
+  // Return the pure HTML string AND the invoice data
+  const htmlString = `
+    <div id="invoice-wrapper" style="padding: 10mm 15mm; background: white; font-family: 'Arial', sans-serif; color: #000; font-size: 12px;">
+      <style>
+        .flex { display: flex; }
+        .company-info { flex: 1; padding: 0 15px; }
+        .comp-name { font-weight: bold; font-style: italic; font-size: 14px; margin-bottom: 5px; }
+        .comp-details { font-size: 11px; line-height: 1.6; }
+        .doc-type { width: 220px; text-align: right; }
+        .doc-title { color: #94a3b8; font-weight: bold; letter-spacing: 1px; margin-bottom: 15px; font-size: 14px; }
+        .doc-date { font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; margin-bottom: 10px; }
+        .doc-no { font-weight: bold; color: #334155; }
+        .bill-title { color: #1e3a8a; font-weight: bold; border-bottom: 1px solid #1e3a8a; display: inline-block; padding-bottom: 2px; margin-bottom: 10px; }
+        .client-grid { display: grid; grid-template-columns: 120px 1fr; row-gap: 5px; font-weight: bold; font-size: 11px; }
+        .client-grid span:nth-child(even) { font-weight: normal; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 5px; margin-top: 20px;}
+        th { background-color: #b4c6e7; color: #000; padding: 8px 5px; border: 1px solid #cbd5e1; text-align: center; font-size: 11px; }
+        td { border: 1px solid #cbd5e1; padding: 6px 5px; text-align: center; height: 20px; }
+        .footer-grid { display: flex; justify-content: space-between; margin-top: 0px; }
+        .remarks { width: 50%; text-align: center; padding-top: 5px; }
+        .totals-box { width: 35%; border: 1px solid #cbd5e1; border-top: none; }
+        .total-row { display: flex; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid #cbd5e1; font-size: 12px; }
+        .total-row:last-child { border-bottom: none; background-color: #f8cbad; font-weight: bold; }
+      </style>
+      
+      <div class="flex" style="border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 20px; align-items: flex-start;">
+        <div style="width: 150px;">
+          ${logoUrl ? `<img src="${logoUrl}" style="max-width: 150px; max-height: 80px;" crossorigin="anonymous" />` : `<div style="height:60px; background:#f1f5f9; text-align:center; line-height:60px; color:#94a3b8; font-weight:bold;">LOGO</div>`}
+        </div>
+        <div class="company-info">
+          <div class="comp-name">${compName}</div>
+          <div class="comp-details">
+            <b>${businessSettings?.location || 'Rwanda'}</b><br/>
+            Email: <a href="mailto:${businessSettings?.email || ''}">${businessSettings?.email || ''}</a><br/>
+            Tel: <a href="tel:${businessSettings?.phone || ''}">${businessSettings?.phone || ''}</a><br/>
+            <b>TIN: ${businessSettings?.tin_number || ''}</b><br/>
+            <b>A/C: ${businessSettings?.bank_account || ''} / ${businessSettings?.bank_name || ''}</b>
           </div>
         </div>
+        <div class="doc-type">
+          <div class="doc-title">PROFORMA INVOICE</div>
+          <div class="doc-date">${piDate}</div>
+          <div class="doc-no">PROFORMA INVOICE NO. ${pi.proforma_number.split('-')[1]}</div>
+        </div>
+      </div>
 
-        <div>
-          <div class="bill-title">BILL TO</div>
-          <div class="client-grid">
-            <span>COMPANY NAME:</span> <span>${pi.client_name}</span>
-            <span>TIN:</span> <span>${pi.client_tin || '-'}</span>
-            <span>PHONE:</span> <span>${pi.client_phone || '-'}</span>
-            <span>EMAIL:</span> <span>${pi.client_email || '-'}</span>
+      <div>
+        <div class="bill-title">BILL TO</div>
+        <div class="client-grid">
+          <span>COMPANY NAME:</span> <span>${pi.client_name}</span>
+          <span>TIN:</span> <span>${pi.client_tin || '-'}</span>
+          <span>PHONE:</span> <span>${pi.client_phone || '-'}</span>
+          <span>EMAIL:</span> <span>${pi.client_email || '-'}</span>
+        </div>
+      </div>
+
+      <table>
+        <thead style="background-color: #dbeafe;">
+          <tr><th style="width: 50%;">DESCRIPTION</th><th style="width: 15%;">QTY</th><th style="width: 15%;">UNIT PRICE</th><th style="width: 20%;">TOTAL</th></tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>
+
+      <div class="footer-grid">
+        <div class="remarks">
+          <div style="font-style: italic; font-weight: bold; font-size: 11px;">Remarks / Payment Instructions:</div>
+          <div>cash or cheque</div>
+          <div style="height: 100px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
+            ${stampUrl ? `<img src="${stampUrl}" style="max-height: 90px; opacity: 0.8;" crossorigin="anonymous" />` : ``}
           </div>
         </div>
-
-        <table>
-          <thead style="background-color: #dbeafe;">
-            <tr><th style="width: 50%;">DESCRIPTION</th><th style="width: 15%;">QTY</th><th style="width: 15%;">UNIT PRICE</th><th style="width: 20%;">TOTAL</th></tr>
-          </thead>
-          <tbody>${itemsHtml}</tbody>
-        </table>
-
-        <div class="footer-grid">
-          <div class="remarks">
-            <div style="font-style: italic; font-weight: bold; font-size: 11px;">Remarks / Payment Instructions:</div>
-            <div>cash or cheque</div>
-            <div style="height: 100px; margin-top: 10px; display: flex; align-items: center; justify-content: center;">
-              ${stampUrl ? `<img src="${stampUrl}" style="max-height: 90px; opacity: 0.8;" />` : ``}
-            </div>
-          </div>
-          <div class="totals-box">
-            <div class="total-row"><span>SUBTOTAL</span> <span style="font-weight: bold;">RWF ${Number(pi.subtotal).toLocaleString()}</span></div>
-            <div class="total-row"><span>TAX RATE</span> <span style="font-weight: bold;">${pi.tax_rate}%</span></div>
-            <div class="total-row" style="padding-top: 15px; padding-bottom: 15px;"><span>Balance Due</span> <span>RWF &nbsp;&nbsp;&nbsp;&nbsp; ${Number(pi.total_amount).toLocaleString()}</span></div>
-          </div>
+        <div class="totals-box">
+          <div class="total-row"><span>SUBTOTAL</span> <span style="font-weight: bold;">RWF ${Number(pi.subtotal).toLocaleString()}</span></div>
+          <div class="total-row"><span>TAX RATE</span> <span style="font-weight: bold;">${pi.tax_rate}%</span></div>
+          <div class="total-row" style="padding-top: 15px; padding-bottom: 15px;"><span>Balance Due</span> <span>RWF &nbsp;&nbsp;&nbsp;&nbsp; ${Number(pi.total_amount).toLocaleString()}</span></div>
         </div>
-        <script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };</script>
+      </div>
+    </div>
+  `;
+
+  return { htmlString, pi };
+};
+
+// --- BUTTON 1: A4 PRINT ENGINE ---
+const handlePrint = async (proformaId) => {
+  const data = await fetchAndGenerateInvoiceHtml(proformaId);
+  if (!data) return; // Stop if it failed to load
+
+  const printWindow = window.open('', '_blank', 'width=800,height=1100');
+  printWindow.document.write(`
+    <html>
+      <head><title>${data.pi.proforma_number}</title></head>
+      <body style="margin:0; padding:0;">
+        ${data.htmlString}
+        <script>
+          window.onload = function() { 
+            window.print(); 
+            setTimeout(function() { window.close(); }, 500); 
+          };
+        </script>
       </body>
-      </html>
-    `);
-    printWindow.document.close();
+    </html>
+  `);
+  printWindow.document.close();
+};
+
+// --- BUTTON 2: PDF DOWNLOAD ENGINE (Refined) ---
+const handleDownloadPDF = async (proformaId) => {
+  // 1. Tell the user we are working on it!
+  Toast.fire({ icon: 'info', title: 'Generating PDF...', timer: 3000 });
+
+  const data = await fetchAndGenerateInvoiceHtml(proformaId);
+  if (!data) return;
+
+  const options = {
+    margin: 0, 
+    filename: `Proforma_${data.pi.proforma_number}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { 
+      scale: 2, 
+      useCORS: true,
+      logging: false,
+      // THE FIX: Delete Tailwind's global oklch stylesheet from the PDF clone before rendering
+      onclone: (clonedDoc) => {
+        const headStyles = clonedDoc.querySelectorAll('head style, head link[rel="stylesheet"]');
+        headStyles.forEach(el => el.remove());
+      }
+    },
+    jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
   };
+
+  // 2. Natively pass the HTML string directly (No need for a fake DOM element)
+  html2pdf().set(options).from(data.htmlString).save().then(() => {
+    // 3. Confirm success
+    Toast.fire({ icon: 'success', title: 'PDF Downloaded!' });
+  });
+};
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500">
@@ -344,6 +404,7 @@ export default function Proformas() {
           <table className="w-full text-left whitespace-nowrap border-collapse min-w-[850px]">
             <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 text-[11px] uppercase tracking-wider font-bold">
               <tr>
+                <th className="px-6 py-4">#</th>
                 <th className="px-6 py-4">Document</th>
                 <th className="px-6 py-4">Client Details</th>
                 <th className="px-6 py-4">Amount & Tax</th>
@@ -358,6 +419,7 @@ export default function Proformas() {
               ) : (
                 proformas.filter(p => p.proforma_number.toLowerCase().includes(searchTerm.toLowerCase()) || p.client_name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
                   <tr key={p.id} className="hover:bg-slate-50/80 transition-colors group">
+                    <td className="px-5 py-3">{proformas.indexOf(p) + 1}</td>
                     <td className="px-6 py-4">
                       <div className="font-semibold text-[13px] text-slate-800">{p.proforma_number}</div>
                       <div className="text-[12px] text-slate-500 mt-0.5">{new Date(p.date).toLocaleDateString()}</div>
@@ -382,8 +444,17 @@ export default function Proformas() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handlePrint(p.id)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-md transition-colors" title="Print Document">
+                        <button onClick={() => handlePrint(p.id)} className="hidden md:flex p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-md transition-colors" title="Print Document">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                        </button>
+                        <button 
+                          onClick={() => handleDownloadPDF(p.id)} 
+                          className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 border border-slate-200 rounded-md transition-colors" 
+                          title="Download PDF"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                          </svg>
                         </button>
                         <button 
                           onClick={() => p.status !== 'Approved' && handleEdit(p.id)} 
@@ -458,7 +529,13 @@ export default function Proformas() {
                   <div className="flex items-center justify-between mb-4">
                     <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Add Items to Quote</h4>
                     <button 
-                      onClick={() => setCart([...cart, { product_id: 'custom-' + Date.now(), customDesc: 'Custom Product / Service', sell_price: 0, cartQty: 1 }])}
+                      onClick={() => setCart([...cart, { 
+                        row_id: Math.random().toString(36).substring(2, 9), 
+                        product_id: 'custom-' + Date.now(), 
+                        customDesc: 'Custom Product / Service', 
+                        sell_price: 0, 
+                        cartQty: 1 
+                      }])}
                       className="text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
                     >
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
@@ -507,21 +584,21 @@ export default function Proformas() {
                           <tr><td colSpan="5" className="text-center py-6 text-slate-400 text-xs">No items added to quote yet.</td></tr>
                         ) : 
                         cart.map(item => (
-                          <tr key={item.product_id} className="hover:bg-slate-50">
+                          <tr key={item.row_id} className="hover:bg-slate-50">
                             <td className="px-4 py-2">
-                              <input type="text" value={item.customDesc} onChange={(e) => setCart(cart.map(i => i.product_id === item.product_id ? {...i, customDesc: e.target.value} : i))} className="w-full min-w-[150px] bg-transparent border-none outline-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-blue-500 rounded px-1" />
+                              <input type="text" value={item.customDesc} onChange={(e) => setCart(cart.map(i => i.row_id === item.row_id ? {...i, customDesc: e.target.value} : i))} className="w-full min-w-[150px] bg-transparent border-none outline-none font-bold text-slate-800 text-xs focus:ring-1 focus:ring-blue-500 rounded px-1" />
                             </td>
                             <td className="px-4 py-2">
-                              <input type="number" min="1" value={item.cartQty} onChange={(e) => updateCartQty(item.product_id, parseInt(e.target.value) || 1)} className="w-full min-w-[60px] bg-white border border-slate-200 rounded px-2 py-1 outline-none text-xs font-bold text-center" />
+                              <input type="number" min="1" value={item.cartQty} onChange={(e) => updateCartQty(item.row_id, parseInt(e.target.value) || 1)} className="w-full min-w-[60px] bg-white border border-slate-200 rounded px-2 py-1 outline-none text-xs font-bold text-center" />
                             </td>
                             <td className="px-4 py-2">
-                              <input type="number" min="0" value={item.sell_price} onChange={(e) => updateCartPrice(item.product_id, e.target.value)} className="w-full min-w-[80px] bg-white border border-slate-200 rounded px-2 py-1 outline-none text-xs font-bold" />
+                              <input type="number" min="0" value={item.sell_price} onChange={(e) => updateCartPrice(item.row_id, e.target.value)} className="w-full min-w-[80px] bg-white border border-slate-200 rounded px-2 py-1 outline-none text-xs font-bold" />
                             </td>
                             <td className="px-4 py-2 text-right font-black text-slate-800 text-xs">
                               {(item.cartQty * item.sell_price).toLocaleString()}
                             </td>
                             <td className="px-4 py-2 text-right">
-                              <button onClick={() => setCart(cart.filter(i => i.product_id !== item.product_id))} className="text-slate-300 hover:text-red-500 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
+                              <button onClick={() => setCart(cart.filter(i => i.row_id !== item.row_id))} className="text-slate-300 hover:text-red-500 transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg></button>
                             </td>
                           </tr>
                         ))}

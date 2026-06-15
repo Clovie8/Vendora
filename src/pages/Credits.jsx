@@ -32,6 +32,11 @@ export default function Credits() {
   const [paymentHistory, setPaymentHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // --- NEW: Invoice Products Modal States (For the Eye Icon) ---
+  const [isProductsModalOpen, setIsProductsModalOpen] = useState(false);
+  const [invoiceProducts, setInvoiceProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(false);
+
   const fetchCredits = async () => {
     setLoading(true);
     try {
@@ -43,7 +48,8 @@ export default function Credits() {
           setCredits(pendingDebts);
           
           const totalRemaining = pendingDebts.reduce((sum, r) => {
-            const total = r.quantity * r.price_at_time;
+            // FAIL-SAFE MATH: Uses invoice total if available, otherwise falls back to quantity * price
+            const total = r.total_amount !== undefined ? parseFloat(r.total_amount) : (r.quantity * r.price_at_time);
             const paid = parseFloat(r.amount_paid || 0);
             return sum + (total - paid);
           }, 0);
@@ -72,15 +78,31 @@ export default function Credits() {
     fetchCredits(); 
   }, [activeTab]);
 
-  const openPayModal = (debt) => {
-    const total = debt.quantity * debt.price_at_time;
+  // REFINED: Made async to fetch the products for the payment modal!
+  const openPayModal = async (debt) => {
+    const total = debt.total_amount !== undefined ? parseFloat(debt.total_amount) : (debt.quantity * debt.price_at_time);
     const paid = parseFloat(debt.amount_paid || 0);
-    const remaining = total - paid;
+    const remaining = debt.balance_due !== undefined ? parseFloat(debt.balance_due) : (total - paid);
     
     setSelectedDebt({ ...debt, total, paid, remaining });
     setAmountPaying(remaining);
     setPaymentMethod('Cash');
+    
+    // Clear previous products and open modal immediately for a snappy UI
+    setInvoiceProducts([]); 
     setIsPayModalOpen(true);
+    setProductsLoading(true);
+
+    try {
+      const res = await apiFetch(`get_invoice_products&invoice_id=${debt.id}`);
+      if (res.status === 'success') {
+        setInvoiceProducts(res.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to load items for payment modal");
+    } finally {
+      setProductsLoading(false);
+    }
   };
 
   const handlePaymentSubmit = async (e) => {
@@ -128,6 +150,24 @@ export default function Credits() {
     }
   };
 
+  // --- NEW: Open Products Modal ---
+  const openProductsModal = async (debt) => {
+    setSelectedDebt(debt);
+    setIsProductsModalOpen(true);
+    setProductsLoading(true);
+    
+    try {
+      const res = await apiFetch(`get_invoice_products&invoice_id=${debt.id}`);
+      if (res.status === 'success') {
+        setInvoiceProducts(res.data || []);
+      }
+    } catch (err) {
+      Toast.fire({ icon: 'error', title: 'Failed to load products' });
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
   const isReceivable = activeTab.includes('receivable');
   const isHistoryTab = activeTab.includes('history');
 
@@ -156,7 +196,8 @@ export default function Credits() {
   const dynamicTotal = isHistoryTab
     ? processedHistory.reduce((sum, h) => sum + parseFloat(h.amount_paid || 0), 0)
     : processedCredits.reduce((sum, r) => {
-        const total = r.quantity * r.price_at_time;
+        // FAIL-SAFE MATH
+        const total = r.total_amount !== undefined ? parseFloat(r.total_amount) : (r.quantity * r.price_at_time);
         const paid = parseFloat(r.amount_paid || 0);
         return sum + (total - paid);
       }, 0);
@@ -316,9 +357,10 @@ export default function Credits() {
                   </tr>
                 ) : (
                   processedCredits.map((r, index) => {
-                    const total = r.quantity * r.price_at_time;
+                    // FAIL-SAFE MATH AGAIN FOR RENDERING
+                    const total = r.total_amount !== undefined ? parseFloat(r.total_amount) : (r.quantity * r.price_at_time);
                     const paid = parseFloat(r.amount_paid || 0);
-                    const remaining = total - paid;
+                    const remaining = r.balance_due !== undefined ? parseFloat(r.balance_due) : (total - paid);
                     const isOverdue = r.deadline_date && new Date(r.deadline_date) < new Date();
 
                     return (
@@ -341,20 +383,24 @@ export default function Credits() {
                           <div className="text-xs text-slate-500 font-medium">{r.client_phone || '-'}</div>
                         </td>
                         <td className="px-5 py-4">
-                          <div className="text-xs"><span className="font-bold text-slate-700">{r.quantity}x</span> {r.product_name}</div>
+                          <div className="text-xs"><span className="font-bold text-slate-700">{r.total_amount ? 'Multiple' : (r.quantity ? `${r.quantity}x` : '')}</span> {r.total_amount ? 'Items' : (r.product_name || 'N/A')}</div>
                           <div className="text-[10px] text-slate-500 font-mono mt-0.5 font-medium tracking-wide">INV: {r.receipt_number || `#${r.id}`}</div>
                         </td>
                         <td className="px-5 py-4 font-bold text-slate-500">{formatRwf(total)}</td>
                         <td className="px-5 py-4 font-bold text-emerald-600">{formatRwf(paid)}</td>
                         <td className="px-5 py-4 font-black text-red-600">{formatRwf(remaining)}</td>
                         <td className="px-5 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* --- NEW: EYE ICON FOR PRODUCTS --- */}
+                            <button onClick={() => openProductsModal(r)} className="text-slate-400 hover:text-emerald-600 transition-colors p-2" title="View Products">
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                            </button>
                             <button onClick={() => openHistoryModal(r)} className="text-slate-400 hover:text-blue-600 transition-colors p-2" title="View History">
                               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             </button>
                             <button 
                               onClick={() => openPayModal(r)}
-                              className="bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm uppercase tracking-wider"
+                              className="bg-slate-900 text-white hover:bg-slate-800 px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-sm uppercase tracking-wider ml-1"
                             >
                               Pay
                             </button>
@@ -383,8 +429,28 @@ export default function Credits() {
             
             <div className="p-6">
               <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-6">
-                <p className="text-xs text-blue-600 font-bold uppercase mb-1">Paying for</p>
+                <p className="text-xs text-blue-600 font-bold uppercase mb-1">Paying for Invoice #{selectedDebt.receipt_number || selectedDebt.id}</p>
                 <p className="text-sm font-black text-slate-800">{selectedDebt.client_name}</p>
+
+                {/* --- REFINED: DISPLAY INVOICE ITEMS --- */}
+                <div className="mt-3 pt-3 border-t border-blue-200/60 max-h-32 overflow-y-auto custom-scrollbar">
+                  {productsLoading ? (
+                    <div className="text-xs text-blue-500 font-medium animate-pulse">Loading items...</div>
+                  ) : invoiceProducts.length > 0 ? (
+                    <ul className="space-y-1">
+                      {invoiceProducts.map((p, idx) => (
+                        <li key={idx} className="flex justify-between text-xs text-blue-900 font-medium">
+                          <span>{p.quantity}x {p.product_name}</span>
+                          <span>{formatRwf(p.quantity * p.price_at_time)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className="text-xs text-slate-400">No specific items found.</div>
+                  )}
+                </div>
+                {/* -------------------------------------- */}
+                
                 <div className="mt-3 flex justify-between items-end">
                   <span className="text-xs font-medium text-slate-500">Remaining Balance:</span>
                   <span className="text-lg font-black text-red-600">Rwf {selectedDebt.remaining.toLocaleString()}</span>
@@ -438,7 +504,7 @@ export default function Credits() {
             <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
               <div>
                 <h3 className="font-black text-slate-800">Payment Audit Ledger</h3>
-                <p className="text-xs font-medium text-slate-500 mt-0.5">Invoice #{selectedDebt.id} • {selectedDebt.client_name}</p>
+                <p className="text-xs font-medium text-slate-500 mt-0.5">Invoice #{selectedDebt.receipt_number || selectedDebt.id} • {selectedDebt.client_name}</p>
               </div>
               <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -469,6 +535,57 @@ export default function Credits() {
                           <td className="px-6 py-3"><span className="text-[10px] font-black uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{h.payment_method}</span></td>
                           <td className="px-6 py-3 text-xs font-medium text-slate-600">{h.user_name || 'System'}</td>
                           <td className="px-6 py-3 text-right font-black text-emerald-600">{formatRwf(h.amount_paid)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- NEW MODAL 3: VIEW INVOICE PRODUCTS --- */}
+      {isProductsModalOpen && selectedDebt && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+              <div>
+                <h3 className="font-black text-slate-800">Invoice Items</h3>
+                <p className="text-xs font-medium text-slate-500 mt-0.5">Invoice #{selectedDebt.receipt_number || selectedDebt.id} • {selectedDebt.client_name}</p>
+              </div>
+              <button onClick={() => setIsProductsModalOpen(false)} className="text-slate-400 hover:text-red-500 transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            
+            <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              {productsLoading ? (
+                <div className="py-12 flex justify-center"><div className="animate-spin w-8 h-8 border-2 border-emerald-600 border-t-transparent rounded-full"></div></div>
+              ) : invoiceProducts.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-medium text-sm">No items found for this invoice.</div>
+              ) : (
+                <table className="w-full text-left whitespace-nowrap">
+                  <thead className="bg-white text-slate-400 text-[10px] uppercase font-bold tracking-wider sticky top-0 border-b border-slate-100">
+                    <tr>
+                      <th className="px-6 py-3">Product Name</th>
+                      <th className="px-6 py-3 text-right">Qty</th>
+                      <th className="px-6 py-3 text-right">Unit Price</th>
+                      <th className="px-6 py-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {invoiceProducts.map((p, idx) => {
+                      const total = p.quantity * p.price_at_time;
+                      return (
+                        <tr key={p.id || idx} className="hover:bg-slate-50/50">
+                          <td className="px-6 py-3">
+                            <div className="font-bold text-slate-800 text-xs">{p.product_name}</div>
+                          </td>
+                          <td className="px-6 py-3 text-right text-xs font-bold text-slate-700">{p.quantity}</td>
+                          <td className="px-6 py-3 text-right text-xs text-slate-500">{formatRwf(p.price_at_time)}</td>
+                          <td className="px-6 py-3 text-right font-black text-slate-800">{formatRwf(total)}</td>
                         </tr>
                       );
                     })}

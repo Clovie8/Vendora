@@ -4,6 +4,7 @@ import { apiFetch } from '../config/api';
 import { formatRwf, formatDateCell, getImageUrl } from '../utils/formatters';
 import Swal from 'sweetalert2';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import html2pdf from 'html2pdf.js';
 
 const Toast = Swal.mixin({
   toast: true,
@@ -100,7 +101,11 @@ export default function Reports() {
       const res = await apiFetch(url);
       
       if (res.status === 'success') {
-        setReportData({ columns: res.columns, data: res.data });
+        let finalColumns = res.columns;
+        if (activeType === 'low_stock') {
+          finalColumns = finalColumns.filter(col => col !== 'Img' && col !== 'Image');
+        }
+        setReportData({ columns: finalColumns, data: res.data });
       } else {
         if(e) Swal.fire('Report Failed', res.message, 'error');
       }
@@ -118,7 +123,7 @@ export default function Reports() {
     reportData.data.forEach((row, i) => {
       const rowData = [i + 1];
       if (reportType === 'low_stock') {
-         rowData.push('-', `"${row.name}"`, `"${row.sku}"`, row.stock_quantity, row.is_requested == 1 ? 'Requested' : 'Unrequested');
+         rowData.push(`"${row.name}"`, `"${row.sku}"`, row.stock_quantity, row.is_requested == 1 ? 'Requested' : 'Unrequested');
       } else { Object.values(row).forEach(val => rowData.push(`"${String(val).replace(/\n/g, ' ')}"`)); }
       csv.push(rowData.join(","));
     });
@@ -138,98 +143,121 @@ export default function Reports() {
   };
 
   // --- NEW PROFESSIONAL PRINT ENGINE ---
-  const handlePrint = () => {
-    if (reportData.data.length === 0) return;
+  // --- SHARED REPORT HTML GENERATOR ---
+  const getReportHtmlString = () => {
+    // 1. Grab the raw HTML from the React DOM
+    let rawTableHtml = document.getElementById('print-table').outerHTML;
     
-    const printWindow = window.open('', '_blank');
-    const tableHtml = document.getElementById('print-table').outerHTML;
+    // 2. THE FIREWALL: Completely strip all Tailwind classes from the HTML string.
+    // This stops the browser from computing 'oklch' colors and crashing html2pdf!
+    let safeTableHtml = rawTableHtml.replace(/class="[^"]*"/g, '');
+
     const currentDate = new Date().toLocaleString();
-    
     const compName = businessSettings?.name || "";
     const compPhone = businessSettings?.phone ? `Tel: ${businessSettings.phone}` : "";
     const compLocation = businessSettings?.location ? `${businessSettings.location}` : "";
     const compTin = businessSettings?.tin_number ? `TIN: ${businessSettings.tin_number}` : "";
-    const logoImg = businessSettings?.logo ? `<img src="http://localhost/stock-manager/backend/public/${businessSettings.logo}" class="logo" />` : '';
+    const logoImg = businessSettings?.logo ? `<img src="http://localhost/stock-manager/backend/public/${businessSettings.logo}" style="max-height: 70px; margin-bottom: 10px;" crossorigin="anonymous" />` : '';
 
-    const html = `
-      <!DOCTYPE html>
+    return `
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 20px; color: #1e293b; background: #fff;">
+        <style>
+          /* We use pure HTML element selectors here because we stripped the classes */
+          .header { text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; }
+          .company-name { font-size: 26px; font-weight: 900; margin: 0 0 5px 0; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; }
+          .company-info { font-size: 13px; color: #64748b; font-weight: 500; }
+          .company-info span { margin: 0 8px; }
+          
+          .report-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }
+          .report-title { font-size: 20px; font-weight: 800; margin: 0; color: #1e293b; text-transform: uppercase; }
+          .report-meta { font-size: 12px; color: #64748b; text-align: right; line-height: 1.5; }
+          
+          /* Safe, Hardcoded Hex CSS for the Table */
+          table { width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #e2e8f0; }
+          th { background-color: #f1f5f9; color: #475569; font-weight: bold; text-transform: uppercase; padding: 12px 10px; text-align: left; border-bottom: 2px solid #cbd5e1; }
+          td { padding: 10px; border-bottom: 1px solid #e2e8f0; color: #334155; vertical-align: middle; }
+          tr:nth-child(even) td { background-color: #f8fafc; }
+          
+          /* Safe styling for SVGs */
+          svg { width: 16px; height: 16px; display: inline-block; vertical-align: middle; margin-right: 6px; stroke: #64748b; }
+          
+          /* Hide UI elements during print */
+          button { display: none !important; }
+          
+          .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; font-weight: 500; }
+        </style>
+        
+        <div class="header">
+          ${logoImg}
+          <h2 class="company-name">${compName}</h2>
+          <div class="company-info">
+            ${compLocation ? `<span>${compLocation}</span>` : ''}
+            ${compPhone ? `<span>|</span><span>${compPhone}</span>` : ''}
+            ${compTin ? `<span>|</span><span>${compTin}</span>` : ''}
+          </div>
+        </div>
+        
+        <div class="report-header">
+          <h2 class="report-title">${currentReportTitle} ${(businessSettings?.vat_registered == 1 && reportType === 'sales') ? '(Net)' : ''}</h2>
+          <div class="report-meta">
+            ${showDateFilters ? `<strong>Period:</strong> ${startDate} to ${endDate} <br>` : ''}
+            <strong>Generated On:</strong> ${currentDate}
+          </div>
+        </div>
+        
+        ${safeTableHtml}
+        
+        <div class="footer">
+          End of Report &bull; Printed by Vendora SaaS
+        </div>
+      </div>
+    `;
+  };
+
+  // --- BUTTON 1: A4 PRINT ENGINE ---
+  const handlePrint = () => {
+    if (reportData.data.length === 0) return;
+    
+    const printWindow = window.open('', '_blank');
+    const htmlContent = getReportHtmlString();
+
+    printWindow.document.write(`
       <html>
-        <head>
-          <title>${currentReportTitle}</title>
-          <style>
-            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; margin: 0; padding: 30px; color: #1e293b; background: #fff; }
-            .header { text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; }
-            .logo { max-height: 70px; margin-bottom: 10px; }
-            .company-name { font-size: 26px; font-weight: 900; margin: 0 0 5px 0; color: #0f172a; text-transform: uppercase; letter-spacing: 1px; }
-            .company-info { font-size: 13px; color: #64748b; font-weight: 500; }
-            .company-info span { margin: 0 8px; }
-            
-            .report-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }
-            .report-title { font-size: 20px; font-weight: 800; margin: 0; color: #1e293b; text-transform: uppercase; }
-            .report-meta { font-size: 12px; color: #64748b; text-align: right; line-height: 1.5; }
-            
-            /* Table styling for print */
-            table { width: 100%; border-collapse: collapse; font-size: 12px; border: 1px solid #e2e8f0; }
-            th { background-color: #f8fafc !important; color: #475569; font-weight: bold; text-transform: uppercase; padding: 12px 10px; text-align: left; border-bottom: 2px solid #cbd5e1; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            td { padding: 10px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; color: #334155; }
-            tr:nth-child(even) { background-color: #f8fafc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            
-            /* Mapping Tailwind Classes to Print Styles */
-            .bg-slate-100 { background-color: #f1f5f9 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .bg-red-50\\/30 { background-color: #fef2f2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .bg-green-100 { background-color: #dcfce7 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .text-red-600, .text-red-500, .text-red-700 { color: #dc2626 !important; }
-            .text-green-700, .text-green-600 { color: #15803d !important; }
-            .text-blue-600, .text-blue-500 { color: #2563eb !important; }
-            .font-bold, .font-semibold, .font-black { font-weight: bold !important; }
-            .text-right { text-align: right !important; }
-            .text-center { text-align: center !important; }
-            .uppercase { text-transform: uppercase !important; }
-            
-            img { max-width: 40px; max-height: 40px; border-radius: 4px; object-fit: cover; }
-
-            td svg { width: 18px !important; height: 18px !important; display: inline-block !important; margin-right: 8px !important; vertical-align: middle !important; }
-            .flex.items-center { display: flex !important; align-items: center !important; }
-            
-            /* Hide UI buttons and actions during print */
-            button, .section-to-print-hide { display: none !important; }
-            
-            .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 15px; font-weight: 500; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            ${logoImg}
-            <h2 class="company-name">${compName}</h2>
-            <div class="company-info">
-              ${compLocation ? `<span>${compLocation}</span>` : ''}
-              ${compPhone ? `<span>|</span><span>${compPhone}</span>` : ''}
-              ${compTin ? `<span>|</span><span>${compTin}</span>` : ''}
-            </div>
-          </div>
-          
-          <div class="report-header">
-            <h2 class="report-title">${currentReportTitle} ${(businessSettings?.vat_registered == 1 && reportType === 'sales') ? '(Net)' : ''}</h2>
-            <div class="report-meta">
-              ${showDateFilters ? `<strong>Period:</strong> ${startDate} to ${endDate} <br>` : ''}
-              <strong>Generated On:</strong> ${currentDate}
-            </div>
-          </div>
-          
-          ${tableHtml}
-          
-          <div class="footer">
-            End of Report &bull; Printed by Vendora SaaS
-          </div>
+        <head><title>${currentReportTitle}</title></head>
+        <body style="margin:0; padding:0;">
+          ${htmlContent}
           <script>
             window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };
           </script>
         </body>
       </html>
-    `;
-    printWindow.document.write(html);
+    `);
     printWindow.document.close();
   };
+
+  // --- BUTTON 2: PDF DOWNLOAD ENGINE ---
+  // --- BUTTON 2: PDF DOWNLOAD ENGINE (Reports) ---
+  const handleDownloadPDF = async () => {
+    if (reportData.data.length === 0) return;
+    Toast.fire({ icon: 'info', title: 'Generating PDF...', timer: 3000 });
+
+    // Grab our perfectly sterile HTML string
+    const htmlContent = getReportHtmlString();
+
+    const options = {
+      margin: 0.2, 
+      filename: `${currentReportTitle.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' } 
+    };
+
+    // Generate directly from the sterile string!
+    html2pdf().set(options).from(htmlContent).save().then(() => {
+      Toast.fire({ icon: 'success', title: 'PDF Downloaded!' });
+    });
+  };
+
 
   const renderTableContent = () => {
     // VAT CALCULATION
@@ -294,7 +322,7 @@ export default function Reports() {
           
           {reportType === 'low_stock' ? (
             <>
-              <td className="px-4 py-2.5 align-middle"><img src={getImageUrl(row.image)} alt="Img" className="w-8 h-8 rounded object-cover border border-slate-200" onError={(e) => e.target.style.display='none'}/></td>
+              {/* <td className="px-4 py-2.5 align-middle"><img src={getImageUrl(row.image)} alt="Img" className="w-8 h-8 rounded object-cover border border-slate-200" onError={(e) => e.target.style.display='none'}/></td> */}
               <td className="px-4 py-2.5 align-middle font-bold text-slate-800">{row.name}</td>
               <td className="px-4 py-2.5 align-middle text-sm text-slate-500">{row.sku}</td>
               <td className="px-4 py-2.5 align-middle"><span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold text-xs">{row.stock_quantity}</span></td>
@@ -399,7 +427,11 @@ export default function Reports() {
           </h3>
           <div className="flex gap-2 section-to-print-hide">
             <button onClick={handleExportCSV} disabled={reportData.data.length === 0} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-green-200 text-green-700 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Export CSV</button>
-            <button onClick={handlePrint} disabled={reportData.data.length === 0} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Print</button>
+            <button onClick={handleDownloadPDF} disabled={reportData.data.length === 0} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> 
+              Download PDF
+            </button>
+            <button onClick={handlePrint} disabled={reportData.data.length === 0} className="hidden md:flex flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Print</button>
           </div>
         </div>
 
@@ -418,7 +450,7 @@ export default function Reports() {
                   
                   {reportData.columns.map((col, i) => {
                     // 1. Skip columns that shouldn't be added together (Added 'Price' to the skip list)
-                    if (['Img', 'Date', 'Product', 'SKU', 'Type', 'Qty', 'Buy Price', 'Sell Price', 'Date & Time', 'Expense Title', 'Category', 'Authorized By', 'Customer', 'Supplier', 'Customer/Supplier', 'Status', 'Method', 'User', 'Unit Price', 'Price'].includes(col)) {
+                    if (['Image', 'Date', 'Product', 'SKU', 'Type', 'Qty', 'Buy Price', 'Sell Price', 'Date & Time', 'Expense Title', 'Category', 'Authorized By', 'Customer', 'Supplier', 'Customer/Supplier', 'Status', 'Method', 'User', 'Unit Price', 'Price'].includes(col)) {
                       return <td key={i} className="px-4 py-3 text-center text-slate-400 font-medium">-</td>;
                     }
                     

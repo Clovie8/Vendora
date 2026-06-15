@@ -373,7 +373,7 @@ export default function StockStatus() {
               <table className="w-full text-left whitespace-nowrap">
                 <thead className="bg-white text-slate-400 text-[11px] uppercase tracking-wider border-b-2 border-slate-100">
                   <tr>
-                    <th className="px-4 py-3 font-bold">Img</th>
+                    <th className="px-4 py-3 font-bold">#</th>
                     <th className="px-4 py-3 font-bold">Product</th>
                     <th className="px-4 py-3 font-bold text-right">Start Qty</th>
                     <th className="px-4 py-3 font-bold text-right text-blue-500">In (Buy)</th>
@@ -392,11 +392,7 @@ export default function StockStatus() {
                       return (
                         <tr key={i} className="hover:bg-slate-50 transition-colors">
                           <td className="px-4 py-2.5 align-middle">
-                            {row.image ? (
-                              <img src={getImageUrl(row.image)} alt="Img" className="w-8 h-8 rounded object-cover border border-slate-200" />
-                            ) : (
-                              <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center text-slate-300 border border-slate-200"><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z"/></svg></div>
-                            )}
+                            {i + 1}
                           </td>
                           <td className="px-4 py-2.5 align-middle">
                             <div className="font-bold text-slate-800 text-sm">{row.name}</div>

@@ -304,10 +304,14 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
                         />
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 bg-slate-50 rounded-md p-1 border border-slate-200 shrink-0">
-                      <button onClick={() => updateCartQty(item.id, item.cartQty - 1)} className="w-6 h-6 text-sm font-black bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 rounded hover:bg-slate-100">-</button>
-                      <span className="text-xs font-bold w-5 text-center text-slate-800">{item.cartQty}</span>
-                      <button onClick={() => updateCartQty(item.id, item.cartQty + 1)} className="w-6 h-6 text-sm font-black bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 rounded hover:bg-slate-100">+</button>
+                    
+                    <div className="flex flex-col items-center justify-center gap-1 shrink-0">
+                      <h4 className="font-bold text-slate-800 text-[10px] truncate">Qty</h4>
+                      <div className="flex items-center gap-1.5 bg-slate-50 rounded-md p-1 border border-slate-200 shrink-0">                      
+                        <button onClick={() => updateCartQty(item.id, item.cartQty - 1)} className="w-6 h-6 text-sm font-black bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 rounded hover:bg-slate-100">-</button>
+                        <span className="text-xs font-bold w-5 text-center text-slate-800">{item.cartQty}</span>
+                        <button onClick={() => updateCartQty(item.id, item.cartQty + 1)} className="w-6 h-6 text-sm font-black bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 rounded hover:bg-slate-100">+</button>
+                      </div>
                     </div>
                   </div>
                   {item.is_serialized == 1 && (

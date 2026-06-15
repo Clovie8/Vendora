@@ -36,7 +36,7 @@ export default function Expenses() {
   const fetchExpenses = async () => {
     setLoading(true);
     try {
-      const url = `fetch_expenses&search=${search}&start=${startDate}&end=${endDate}&page=${page}`;
+      const url = `fetch_expenses?search=${encodeURIComponent(search)}&start=${startDate}&end=${endDate}&page=${page}`;
       const res = await apiFetch(url);
       
       setExpenses(res.data || []);

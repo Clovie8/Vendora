@@ -56,7 +56,7 @@ export default function NewSale() {
 
   // Fetch initial products for the grid
   useEffect(() => { 
-    apiFetch(`fetch&search=&limit=50&status=Active`).then(res => {
+    apiFetch(`fetch?search=&limit=50&status=Active`).then(res => {
       if(res.status === 'success') setProducts(res.data);
     }); 
   }, []);
@@ -455,7 +455,7 @@ export default function NewSale() {
         setEbmNumber('');
         
         // Refresh grid
-        apiFetch(`fetch&search=&limit=50&status=Active`).then(res => {
+        apiFetch(`fetch?search=&limit=50&status=Active`).then(res => {
           if(res.status === 'success') setProducts(res.data);
         });
       }
@@ -629,11 +629,14 @@ export default function NewSale() {
                         />
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-slate-50 rounded-md p-1 border border-slate-200 shrink-0">
-                    <button onClick={() => updateCartQty(item.id, item.cartQty - 1)} className="w-6 h-6 text-sm font-black bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 rounded hover:bg-slate-100">-</button>
-                    <span className="text-[11px] sm:text-xs font-bold w-4 text-center text-slate-800">{item.cartQty}</span>
-                    <button onClick={() => updateCartQty(item.id, item.cartQty + 1)} className="w-6 h-6 text-sm font-black bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 rounded hover:bg-slate-100">+</button>
-                  </div>
+                  <div className="flex flex-col items-center justify-center gap-1 shrink-0">
+                    <h4 className="font-bold text-slate-800 text-[10px] truncate">Qty</h4>
+                    <div className="flex items-center gap-2 bg-slate-50 rounded-md p-1 border border-slate-200 shrink-0">
+                      <button onClick={() => updateCartQty(item.id, item.cartQty - 1)} className="w-6 h-6 text-sm font-black bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 rounded hover:bg-slate-100">-</button>
+                      <span className="text-[11px] sm:text-xs font-bold w-4 text-center text-slate-800">{item.cartQty}</span>
+                      <button onClick={() => updateCartQty(item.id, item.cartQty + 1)} className="w-6 h-6 text-sm font-black bg-white shadow-sm border border-slate-200 flex items-center justify-center text-slate-600 rounded hover:bg-slate-100">+</button>
+                    </div>
+                  </div>  
                 </div>
                 {item.is_serialized == 1 && (
                   <div className="w-full mt-1 border-t border-slate-100 pt-2">

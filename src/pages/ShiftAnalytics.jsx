@@ -138,6 +138,7 @@ export default function ShiftAnalytics() {
           <table className="w-full text-left whitespace-nowrap border-collapse">
             <thead className="bg-slate-50 border-b border-slate-100/80 text-slate-400 text-[10px] uppercase tracking-wider font-bold">
               <tr>
+                <th className="px-5 py-3.5 rounded-tl-xl">#</th>
                 <th className="px-5 py-3.5 rounded-tl-xl">Cashier</th>
                 <th className="px-5 py-3.5">Time Window</th>
                 <th className="px-5 py-3.5">Status</th>
@@ -155,6 +156,7 @@ export default function ShiftAnalytics() {
                   const variance = shift.status === 'closed' ? (Number(shift.actual_cash) - Number(shift.expected_cash)) : 0;
                   return (
                     <tr key={shift.id} className="hover:bg-slate-50/80 transition-colors group">
+                      <td className="px-5 py-4 font-black text-[13px] text-slate-800">{filteredShifts.indexOf(shift) + 1}</td>
                       <td className="px-5 py-4 font-black text-[13px] text-slate-800">{shift.cashier_name}</td>
                       <td className="px-5 py-4">
                         <div className="text-[12px] font-bold text-slate-700">{formatDate(shift.start_time)}</div>

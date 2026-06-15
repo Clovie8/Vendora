@@ -78,8 +78,24 @@ export default function Batches() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50">
           <div className="flex gap-2 bg-slate-200/50 p-1 rounded-lg w-full sm:w-auto overflow-x-auto">
-            <button onClick={() => setStatusFilter('active')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all whitespace-nowrap ${statusFilter === 'active' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Active Shelf Stock</button>
-            <button onClick={() => setStatusFilter('all')} className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all whitespace-nowrap ${statusFilter === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>All Batches History</button>
+            <button 
+              onClick={() => setStatusFilter('active')} 
+              className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all whitespace-nowrap ${statusFilter === 'active' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Active Shelf Stock
+            </button>
+            <button 
+              onClick={() => setStatusFilter('depleted')} 
+              className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all whitespace-nowrap ${statusFilter === 'depleted' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Sold Out (Depleted)
+            </button>
+            <button 
+              onClick={() => setStatusFilter('all')} 
+              className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all whitespace-nowrap ${statusFilter === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              All Batches History
+            </button>
           </div>
 
           {/* NEW: LIVE SEARCH BAR */}
