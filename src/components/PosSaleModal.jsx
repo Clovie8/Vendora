@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../config/api';
 import { formatRwf, getImageUrl } from '../utils/formatters';
 import Swal from 'sweetalert2';
+import CreatableSelect from 'react-select/creatable';
 
 const Toast = Swal.mixin({
   toast: true, position: 'top-end', showConfirmButton: false, timer: 3000,
@@ -14,6 +15,112 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
   const [cart, setCart] = useState([]);
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+
+
+
+  // --- NEW: CRM States ---
+  const [contactId, setContactId] = useState(null); 
+  const [customers, setCustomers] = useState([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+
+  // --- NEW: Fetch Customers when Modal Opens ---
+  useEffect(() => {
+    if (isOpen) {
+      apiFetch('get_contacts&type=Customer').then(res => {
+        if (res.status === 'success') {
+          const formatted = res.data.map(c => ({
+            value: c.id,
+            label: `${c.contact_code} - ${c.name} ${c.phone ? `(${c.phone})` : ''}`,
+            contact: c
+          }));
+          setCustomers(formatted);
+        }
+      }).catch(e => console.error(e));
+    }
+  }, [isOpen]);
+
+
+
+  // --- NEW: Smart Dropdown Actions ---
+  const handleCustomerChange = (selectedOption) => {
+    if (selectedOption) {
+      setContactId(selectedOption.value);
+      setClientName(selectedOption.contact.name);
+      setClientPhone(selectedOption.contact.phone || '');
+    } else {
+      setContactId(null);
+      setClientName('');
+      setClientPhone('');
+    }
+  };
+
+  const handleCreateCustomer = async (inputValue) => {
+    // 1. Ask the Cashier what they want to do
+    const result = await Swal.fire({
+      title: `Customer: ${inputValue}`,
+      html: `
+        <div class="text-sm text-slate-500 mb-3">Enter phone number (optional)</div>
+        <input id="swal-phone" class="swal2-input" style="margin-top: 0;" placeholder="e.g., 078...">
+      `,
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: 'Save to CRM',
+      denyButtonText: 'Receipt Only',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb', // Blue for CRM Save
+      denyButtonColor: '#64748b',    // Slate for Receipt Only
+      customClass: { popup: 'rounded-2xl shadow-xl' },
+      preConfirm: () => {
+        return document.getElementById('swal-phone').value;
+      }
+    });
+
+    // 2. If they clicked Cancel or closed the popup, abort completely.
+    if (result.isDismissed && result.dismiss !== Swal.DismissReason.deny) {
+      return;
+    }
+
+    // 3. If they clicked "Receipt Only" (The Deny Button)
+    if (result.isDenied) {
+      const phone = document.getElementById('swal-phone').value;
+      setContactId(null); // NULL means it won't save to the DB!
+      setClientName(inputValue);
+      setClientPhone(phone);
+      Toast.fire({ icon: 'info', title: 'Using name for this receipt only' });
+      return;
+    }
+
+    // 4. If they clicked "Save to CRM" (The Confirm Button)
+    const phoneNumber = result.value;
+    setIsLoadingCustomers(true);
+    try {
+      const formPayload = new FormData();
+      formPayload.append('name', inputValue);
+      formPayload.append('phone', phoneNumber || '');
+      formPayload.append('type', 'Customer');
+      
+      const res = await apiFetch('create_contact', { method: 'POST', body: formPayload });
+      if (res.status === 'success') {
+        const newCustomer = {
+          value: res.data.id,
+          label: `${res.data.contact_code} - ${res.data.name} ${phoneNumber ? `(${phoneNumber})` : ''}`,
+          contact: res.data
+        };
+        setCustomers((prev) => [...prev, newCustomer]);
+        handleCustomerChange(newCustomer);
+        Toast.fire({ icon: 'success', title: 'Customer saved to Directory!' });
+      } else {
+        Toast.fire({ icon: 'error', title: res.message || 'Failed to save customer' });
+      }
+    } catch (err) { 
+      console.error(err);
+      Toast.fire({ icon: 'error', title: 'Failed to save customer' }); 
+    } finally { 
+      setIsLoadingCustomers(false); 
+    }
+  };
+
+
   
   const [paymentStatus, setPaymentStatus] = useState('paid');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
@@ -226,9 +333,24 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
 
   const handleMultiCheckout = async () => {
     if (cart.length === 0) return;
+
+    // --- NEW: FORCE CUSTOMER SELECTION ---
+    if (!contactId && clientName.trim() === '') {
+      return Toast.fire({ 
+        icon: 'error', 
+        title: 'Validation Error: Please select or create a Customer!' 
+      });
+    }
+    // -------------------------------------
     
-    if ((paymentStatus === 'credit' || paymentStatus === 'partial') && clientName.trim() === '') {
-      return Toast.fire({ icon: 'error', title: 'Customer Name required for Credit/Partial payments!' });
+    // VALIDATE PAYMENTS & CRM LINKING FOR DEBTS
+    if (paymentStatus === 'credit' || paymentStatus === 'partial') {
+      if (!contactId) {
+        return Toast.fire({ 
+          icon: 'error', 
+          title: 'Action Denied: Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
+        });
+      }
     }
     if (paymentStatus === 'partial') {
       const paidVal = Number(amountPaid);
@@ -275,6 +397,9 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
         fd.append('product_id', item.id); 
         fd.append('quantity', item.cartQty);
         fd.append('price_at_time', item.sell_price); 
+
+        fd.append('contact_id', contactId || ''); 
+        fd.append('client_name', clientName || 'Walk-in');
         
         fd.append('client_name', clientName); 
         fd.append('client_phone', clientPhone); 
@@ -327,7 +452,7 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
           printThermalReceipt(cart, cartTotal, receiptNumber);
         }
         
-        setCart([]); setClientName(''); setClientPhone(''); 
+        setCart([]); setContactId(null); setClientName(''); setClientPhone('');
         setPaymentStatus('paid'); setPaymentMethod('Cash'); setAmountPaid(''); setDeadlineDate(''); setEbmNumber('');
         
         onSuccess(); 
@@ -460,9 +585,34 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
           </div>
 
           <div className="p-3 bg-slate-50 border-t border-slate-200 space-y-2 shrink-0">
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" placeholder="Customer Name" value={clientName} onChange={(e) => setClientName(e.target.value)} className="w-full px-3 py-1.5 text-xs lg:text-sm border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-red-500 focus:ring-1 focus:ring-red-500/20" />
-              <input type="text" placeholder="Phone Number" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className="w-full px-3 py-1.5 text-xs lg:text-sm border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-red-500 focus:ring-1 focus:ring-red-500/20" />
+            <div className="mb-2">
+              <CreatableSelect
+                isClearable
+                isLoading={isLoadingCustomers}
+                options={customers}
+                placeholder="Search or add customer..."
+                value={
+                  contactId 
+                    ? customers.find(c => c.value === contactId) 
+                    : clientName && clientName !== 'Walk-in'
+                      ? { label: `${clientName} (Receipt Only)`, value: 'walk-in' }
+                      : null
+                }
+                onChange={handleCustomerChange}
+                onCreateOption={handleCreateCustomer}
+                formatCreateLabel={(inputValue) => `+ Save & Use "${inputValue}" to CRM`}
+                styles={{
+                  control: (base) => ({
+                    ...base,
+                    backgroundColor: '#fff',
+                    borderColor: '#cbd5e1',
+                    borderRadius: '0.5rem',
+                    minHeight: '36px',
+                    fontSize: '0.875rem',
+                    fontWeight: '700'
+                  })
+                }}
+              />
             </div>
 
             <div className="mt-2 mb-1">
@@ -501,7 +651,7 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
             {(paymentStatus === 'partial' || paymentStatus === 'credit') && (
               <div className="flex items-center gap-2 bg-white px-3 py-1 border border-slate-300 rounded-lg focus-within:border-red-500 focus-within:ring-1">
                 <span className="text-[10px] lg:text-xs font-bold text-slate-500 whitespace-nowrap">Deadline:</span>
-                <input type="date" value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} className="w-full outline-none text-xs lg:text-sm font-bold text-slate-800 bg-transparent" />
+                <input type="date" min={new Date().toISOString().split('T')[0]} value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} className="w-full outline-none text-xs lg:text-sm font-bold text-slate-800 bg-transparent" />
               </div>
             )}
           </div>

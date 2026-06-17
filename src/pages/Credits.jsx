@@ -107,14 +107,22 @@ export default function Credits() {
 
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
-    if (amountPaying <= 0 || amountPaying > selectedDebt.remaining) {
-      return Toast.fire({ icon: 'error', title: 'Invalid payment amount!' });
+    
+    // --- REFINED: Strict Number Parsing ---
+    const payAmount = parseFloat(amountPaying);
+    
+    if (payAmount <= 0 || payAmount > selectedDebt.remaining) {
+      return Toast.fire({ 
+        icon: 'error', 
+        title: `Invalid amount! Max is Rwf ${selectedDebt.remaining.toLocaleString()}` 
+      });
     }
+    // --------------------------------------
 
     setIsSubmitting(true);
     const formData = new FormData();
-    formData.append('id', selectedDebt.id);
-    formData.append('amount_paying', amountPaying);
+    formData.append('id', selectedDebt.id); // This is the Invoice ID
+    formData.append('amount_paying', payAmount);
     formData.append('payment_method', paymentMethod);
 
     try {
@@ -176,7 +184,8 @@ export default function Credits() {
     .filter(r => {
       const matchesSearch = (r.client_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
                             (r.product_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            (r.receipt_number || r.id?.toString() || '').toLowerCase().includes(searchTerm.toLowerCase());
+                            (r.receipt_number || r.id?.toString() || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            (r.contact_code || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchesDate = filterDate ? (r.date && r.date.startsWith(filterDate)) : true;
       return matchesSearch && matchesDate;
     })
@@ -332,10 +341,13 @@ export default function Credits() {
                   return (
                     <tr key={`hist-${h.id || 'x'}-${index}`} className="hover:bg-slate-50 transition-colors">
                         <td className="px-5 py-4 text-sm text-slate-500"><div className="font-bold text-slate-700">{date}</div><div className="text-xs">{time}</div></td>
-                        <td className="px-5 py-4 font-bold text-slate-800">{h.client_name || 'Unknown'}</td>
+                        <td className="px-5 py-4">
+                          <div className="font-bold text-slate-800">{h.client_name || 'Unknown'}</div>
+                          {h.contact_code && <div className="text-[10px] text-blue-600 font-bold mt-0.5">{h.contact_code}</div>}
+                        </td>
                         <td className="px-5 py-4">
                           <div className="text-xs"><span className="font-bold text-slate-700">{h.quantity ? `${h.quantity}x ` : ''}</span>{h.product_name || 'N/A'}</div>
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5 font-medium tracking-wide">INV: {h.receipt_number || `#${h.transaction_id}`}</div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5 font-medium tracking-wide">{h.receipt_number || `#${h.transaction_id}`}</div>
                         </td>
                         <td className="px-5 py-4"><span className="text-[10px] font-black uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-100 px-2 py-1 rounded">{h.payment_method}</span></td>
                         <td className="px-5 py-4 text-sm font-medium text-slate-600">{h.user_name || 'System'}</td>
@@ -380,11 +392,14 @@ export default function Credits() {
                         </td>
                         <td className="px-5 py-4">
                           <div className="font-bold text-slate-800">{r.client_name || 'Unknown'}</div>
-                          <div className="text-xs text-slate-500 font-medium">{r.client_phone || '-'}</div>
+                          <div className="text-xs text-slate-500 font-medium mt-0.5">
+                            {r.contact_code && <span className="text-blue-600 text-[10px] bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded font-bold mr-1.5">{r.contact_code}</span>}
+                            {r.client_phone || '-'}
+                          </div>
                         </td>
                         <td className="px-5 py-4">
                           <div className="text-xs"><span className="font-bold text-slate-700">{r.total_amount ? 'Multiple' : (r.quantity ? `${r.quantity}x` : '')}</span> {r.total_amount ? 'Items' : (r.product_name || 'N/A')}</div>
-                          <div className="text-[10px] text-slate-500 font-mono mt-0.5 font-medium tracking-wide">INV: {r.receipt_number || `#${r.id}`}</div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5 font-medium tracking-wide">{r.receipt_number || `#${r.id}`}</div>
                         </td>
                         <td className="px-5 py-4 font-bold text-slate-500">{formatRwf(total)}</td>
                         <td className="px-5 py-4 font-bold text-emerald-600">{formatRwf(paid)}</td>

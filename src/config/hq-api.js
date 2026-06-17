@@ -13,4 +13,4 @@ export const hqFetch = async (endpoint, options = {}) => {
 
   const response = await fetch(url, defaultOptions);
   return response.json();
-};
+};  

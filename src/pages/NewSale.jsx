@@ -3,6 +3,7 @@ import { apiFetch } from '../config/api';
 import { formatRwf } from '../utils/formatters';
 import Swal from 'sweetalert2';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import CreatableSelect from 'react-select/creatable';
 
 const Toast = Swal.mixin({
   toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, timerProgressBar: true,
@@ -19,6 +20,10 @@ export default function NewSale() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [cart, setCart] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  const [contactId, setContactId] = useState(null); // <-- NEW
+  const [customers, setCustomers] = useState([]); // <-- NEW
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
   
   // NEW: ERP Customer & Payment States
   const [clientName, setClientName] = useState('');
@@ -33,6 +38,20 @@ export default function NewSale() {
 
   const dropdownRef = useRef(null);
   const searchInputRef = useRef(null);
+
+  // --- NEW: Fetch Customers on load ---
+  useEffect(() => { 
+    apiFetch('get_contacts&type=Customer').then(res => {
+      if (res.status === 'success') {
+        const formatted = res.data.map(c => ({
+          value: c.id,
+          label: `${c.contact_code} - ${c.name} ${c.phone ? `(${c.phone})` : ''}`,
+          contact: c
+        }));
+        setCustomers(formatted);
+      }
+    }).catch(e => console.error(e));
+  }, []);
 
   useEffect(() => { 
     checkShiftStatus(); 
@@ -91,6 +110,90 @@ export default function NewSale() {
       setLoading(false);
     }
   };
+
+
+
+  // --- NEW: Smart Dropdown Actions ---
+  const handleCustomerChange = (selectedOption) => {
+    if (selectedOption) {
+      setContactId(selectedOption.value);
+      setClientName(selectedOption.contact.name);
+      setClientPhone(selectedOption.contact.phone || '');
+    } else {
+      setContactId(null);
+      setClientName('');
+      setClientPhone('');
+    }
+  };
+
+  const handleCreateCustomer = async (inputValue) => {
+    // 1. Ask the Cashier what they want to do
+    const result = await Swal.fire({
+      title: `Customer: ${inputValue}`,
+      html: `
+        <div class="text-sm text-slate-500 mb-3">Enter phone number (optional)</div>
+        <input id="swal-phone" class="swal2-input" style="margin-top: 0;" placeholder="e.g., 078...">
+      `,
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: 'Save to CRM',
+      denyButtonText: 'Receipt Only',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb', // Blue for CRM Save
+      denyButtonColor: '#64748b',    // Slate for Receipt Only
+      customClass: { popup: 'rounded-2xl shadow-xl' },
+      preConfirm: () => {
+        return document.getElementById('swal-phone').value;
+      }
+    });
+
+    // 2. If they clicked Cancel or closed the popup, abort completely.
+    if (result.isDismissed && result.dismiss !== Swal.DismissReason.deny) {
+      return;
+    }
+
+    // 3. If they clicked "Receipt Only" (The Deny Button)
+    if (result.isDenied) {
+      const phone = document.getElementById('swal-phone').value;
+      setContactId(null); // NULL means it won't save to the DB!
+      setClientName(inputValue);
+      setClientPhone(phone);
+      Toast.fire({ icon: 'info', title: 'Using name for this receipt only' });
+      return;
+    }
+
+    // 4. If they clicked "Save to CRM" (The Confirm Button)
+    const phoneNumber = result.value;
+    setIsLoadingCustomers(true);
+    try {
+      const formPayload = new FormData();
+      formPayload.append('name', inputValue);
+      formPayload.append('phone', phoneNumber || '');
+      formPayload.append('type', 'Customer');
+      
+      const res = await apiFetch('create_contact', { method: 'POST', body: formPayload });
+      if (res.status === 'success') {
+        const newCustomer = {
+          value: res.data.id,
+          label: `${res.data.contact_code} - ${res.data.name} ${phoneNumber ? `(${phoneNumber})` : ''}`,
+          contact: res.data
+        };
+        setCustomers((prev) => [...prev, newCustomer]);
+        handleCustomerChange(newCustomer);
+        Toast.fire({ icon: 'success', title: 'Customer saved to Directory!' });
+      } else {
+        Toast.fire({ icon: 'error', title: res.message || 'Failed to save customer' });
+      }
+    } catch (err) { 
+      console.error(err);
+      Toast.fire({ icon: 'error', title: 'Failed to save customer' }); 
+    } finally { 
+      setIsLoadingCustomers(false); 
+    }
+  };
+
+
+
 
   const handleEndShift = async () => {
     const { value: actualCash } = await Swal.fire({
@@ -341,10 +444,25 @@ export default function NewSale() {
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+
+    // --- NEW: FORCE CUSTOMER SELECTION ---
+    if (!contactId && clientName.trim() === '') {
+      return Toast.fire({ 
+        icon: 'error', 
+        title: 'Validation Error: Please select or create a Customer!' 
+      });
+    }
+    // -------------------------------------
     
     // VALIDATE PAYMENTS
-    if ((paymentStatus === 'credit' || paymentStatus === 'partial') && clientName.trim() === '') {
-      return Toast.fire({ icon: 'error', title: 'Customer Name is required for Credit/Partial sales!' });
+    // VALIDATE PAYMENTS & CRM LINKING FOR DEBTS
+    if (paymentStatus === 'credit' || paymentStatus === 'partial') {
+      if (!contactId) {
+        return Toast.fire({ 
+          icon: 'error', 
+          title: 'Action Denied: Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
+        });
+      }
     }
     if (paymentStatus === 'partial') {
       const paidVal = Number(amountPaid);
@@ -394,7 +512,8 @@ export default function NewSale() {
         formData.append('quantity', item.cartQty);
         formData.append('price_at_time', item.sell_price);
         
-        formData.append('client_name', clientName);
+        formData.append('contact_id', contactId || '');
+        formData.append('client_name', clientName || 'Walk-in');
         formData.append('client_phone', clientPhone);
         formData.append('payment_status', paymentStatus);
         formData.append('receipt_number', receiptNumber);
@@ -657,10 +776,37 @@ export default function NewSale() {
 
         {/* CUSTOMER & PAYMENT CONFIGURATION */}
         <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 space-y-3 shrink-0">
-          <div className="grid grid-cols-2 gap-2">
-            <input type="text" placeholder="Customer Name" value={clientName} onChange={(e) => setClientName(e.target.value)} className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-            <input type="text" placeholder="Phone Number"  value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-          </div>
+          <div className="mb-2">
+              <CreatableSelect
+                isClearable
+                isLoading={isLoadingCustomers}
+                options={customers}
+                placeholder="Search or add customer..."
+                value={
+                  contactId 
+                    ? customers.find(c => c.value === contactId) 
+                    : clientName && clientName !== 'Walk-in'
+                      ? { label: `${clientName} (Receipt Only)`, value: 'walk-in' }
+                      : null
+                }
+                onChange={handleCustomerChange}
+                onCreateOption={handleCreateCustomer}
+                // --- THE CRITICAL FIX: Clearer instructions for the cashier ---
+                formatCreateLabel={(inputValue) => `+ Save & Use "${inputValue}"`}
+                // --------------------------------------------------------------
+                styles={{
+                  control: (base) => ({
+                    ...base,
+                    backgroundColor: '#fff',
+                    borderColor: '#cbd5e1',
+                    borderRadius: '0.5rem',
+                    minHeight: '36px',
+                    fontSize: '0.875rem',
+                    fontWeight: '700'
+                  })
+                }}
+              />
+            </div>
 
           <div className="mt-3 mb-1">
             <input type="text" placeholder="EBM Receipt Number (Optional)" value={ebmNumber} onChange={(e) => setEbmNumber(e.target.value)} className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-red-500 focus:ring-1 focus:ring-red-500" />
@@ -698,7 +844,7 @@ export default function NewSale() {
           {(paymentStatus === 'partial' || paymentStatus === 'credit') && (
             <div className="flex items-center gap-2 bg-white px-3 py-1.5 border border-slate-300 rounded-lg transition-all focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
               <span className="text-[10px] font-bold text-slate-500 whitespace-nowrap">Deadline Date:</span>
-              <input type="date" value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} className="w-full outline-none text-[11px] font-bold text-slate-800 bg-transparent" />
+              <input type="date" min={new Date().toISOString().split('T')[0]} value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} className="w-full outline-none text-[11px] font-bold text-slate-800 bg-transparent" />
             </div>
           )}
         </div>

@@ -25,6 +25,8 @@ export default function Settings() {
   // Form States
   const [newMember, setNewMember] = useState({ name: '', email: '', password: '', role: 'Cashier' });
   const [editMember, setEditMember] = useState(null); 
+
+  const [resendingId, setResendingId] = useState(null);
   
   // UI States
   const [loading, setLoading] = useState(false);
@@ -139,6 +141,30 @@ export default function Settings() {
       Toast.fire({ icon: 'error', title: 'Connection Error' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // --- REFINED: Accept email and send as JSON ---
+  const handleResendVerification = async (memberId, memberEmail) => {
+    setResendingId(memberId);
+    try {
+      const res = await apiFetch('resend_verification', { 
+        method: 'POST', 
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email: memberEmail }) 
+      });
+      
+      if (res.status === 'success') {
+        Toast.fire({ icon: 'success', title: 'Verification email resent successfully!' });
+      } else {
+        Toast.fire({ icon: 'error', title: res.message || 'Failed to resend email.' });
+      }
+    } catch (err) {
+      Toast.fire({ icon: 'error', title: 'Network error. Please try again.' });
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -282,7 +308,7 @@ export default function Settings() {
                 <div className="flex items-center gap-4 p-4 bg-white shadow-sm border border-slate-200/60 rounded-2xl transition-all hover:border-slate-300">
                   <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
                     {business.logo ? (
-                      <img src={`http://localhost/stock-manager/backend/public/${business.logo}`} className="w-full h-full object-contain p-1" alt="Logo" />
+                      <img src={`https://vendora-htcbbye5c0b3h8gn.southafricanorth-01.azurewebsites.net/backend/public/${business.logo}`} className="w-full h-full object-contain p-1" alt="Logo" />
                     ) : (
                       <span className="text-[9px] text-slate-400 font-bold uppercase text-center leading-tight p-2">Upload<br/>Logo</span>
                     )}
@@ -297,7 +323,7 @@ export default function Settings() {
                 <div className="flex items-center gap-4 p-4 bg-white shadow-sm border border-slate-200/60 rounded-2xl transition-all hover:border-slate-300">
                   <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
                     {business.stamp_signature ? (
-                      <img src={`http://localhost/stock-manager/backend/public/${business.stamp_signature}`} className="w-full h-full object-contain p-1" alt="Stamp" />
+                      <img src={`https://vendora-htcbbye5c0b3h8gn.southafricanorth-01.azurewebsites.net/backend/public/${business.stamp_signature}`} className="w-full h-full object-contain p-1" alt="Stamp" />
                     ) : (
                       <span className="text-[9px] text-slate-400 font-bold uppercase text-center leading-tight p-2">Upload<br/>Stamp</span>
                     )}
@@ -524,13 +550,33 @@ export default function Settings() {
                             <div className="text-[12px] text-slate-500 mt-0.5">{member.email}</div>
                           </td>
                           <td className="px-4 py-3">
-                             <div className="flex items-center gap-2">
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${member.role === 'Admin' ? 'bg-[#f3e8ff] text-[#7e22ce]' : 'bg-[#e0e7ff] text-[#1d4ed8]'}`}>
-                                {member.role}
-                              </span>
-                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${member.status === 'active' ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-rose-100 text-rose-700'}`}>
-                                {member.status || 'Active'}
-                              </span>
+                             <div className="flex flex-col items-start gap-1.5">
+                               <div className="flex items-center gap-2">
+                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${member.role === 'Admin' ? 'bg-[#f3e8ff] text-[#7e22ce]' : 'bg-[#e0e7ff] text-[#1d4ed8]'}`}>
+                                   {member.role}
+                                 </span>
+                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${member.status === 'active' ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-amber-100 text-amber-700'}`}>
+                                   {member.status === 'pending' ? 'Pending Verification' : (member.status || 'Active')}
+                                 </span>
+                               </div>
+                               
+                               {/* --- NEW: Resend Email Logic --- */}
+                               {member.status === 'pending' && (
+                                 resendingId === member.id ? (
+                                   <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5 ml-1">
+                                     <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin"></div>
+                                     Sending...
+                                   </span>
+                                 ) : (
+                                   <button 
+                                     onClick={() => handleResendVerification(member.id, member.email)}
+                                     className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline hover:no-underline ml-1 transition-colors"
+                                   >
+                                     Resend verification email
+                                   </button>
+                                 )
+                               )}
+                               {/* ------------------------------- */}
                              </div>
                           </td>
                           <td className="px-4 py-3 text-right">

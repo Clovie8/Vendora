@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../config/api';
 import { formatRwf, getImageUrl } from '../utils/formatters';
 import Swal from 'sweetalert2';
+import CreatableSelect from 'react-select/creatable';
 
 const Toast = Swal.mixin({
   toast: true, position: 'top-end', showConfirmButton: false, timer: 3000,
@@ -14,6 +15,101 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
   const [cart, setCart] = useState([]);
   const [clientName, setClientName] = useState('');
   const [clientPhone, setClientPhone] = useState('');
+
+  const [contactId, setContactId] = useState(null); 
+  const [suppliers, setSuppliers] = useState([]);
+  const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      apiFetch('get_contacts&type=Supplier').then(res => {
+        if (res.status === 'success') {
+          const formatted = res.data.map(c => ({
+            value: c.id,
+            label: `${c.contact_code} - ${c.name} ${c.phone ? `(${c.phone})` : ''}`,
+            contact: c
+          }));
+          setSuppliers(formatted);
+        }
+      }).catch(e => console.error(e));
+    }
+  }, [isOpen]);
+
+
+  const handleSupplierChange = (selectedOption) => {
+    if (selectedOption) {
+      setContactId(selectedOption.value);
+      setClientName(selectedOption.contact.name);
+      setClientPhone(selectedOption.contact.phone || '');
+    } else {
+      setContactId(null);
+      setClientName('');
+      setClientPhone('');
+    }
+  };
+
+  const handleCreateSupplier = async (inputValue) => {
+    // 1. Ask the Cashier what they want to do
+    const result = await Swal.fire({
+      title: `Supplier: ${inputValue}`,
+      html: `
+        <div class="text-sm text-slate-500 mb-3">Enter phone number (optional)</div>
+        <input id="swal-phone" class="swal2-input" style="margin-top: 0;" placeholder="e.g., 078...">
+      `,
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: 'Save to CRM',
+      denyButtonText: 'Receipt Only',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#ea580c', // Orange for CRM Save
+      denyButtonColor: '#64748b',    // Slate for Receipt Only
+      customClass: { popup: 'rounded-2xl shadow-xl' },
+      preConfirm: () => {
+        return document.getElementById('swal-phone').value;
+      }
+    });
+
+    if (result.isDismissed && result.dismiss !== Swal.DismissReason.deny) {
+      return;
+    }
+
+    if (result.isDenied) {
+      const phone = document.getElementById('swal-phone').value;
+      setContactId(null); 
+      setClientName(inputValue);
+      setClientPhone(phone);
+      Toast.fire({ icon: 'info', title: 'Using name for this receipt only' });
+      return;
+    }
+
+    const phoneNumber = result.value;
+    setIsLoadingSuppliers(true);
+    try {
+      const formPayload = new FormData();
+      formPayload.append('name', inputValue);
+      formPayload.append('phone', phoneNumber || '');
+      formPayload.append('type', 'Supplier');
+      
+      const res = await apiFetch('create_contact', { method: 'POST', body: formPayload });
+      if (res.status === 'success') {
+        const newSupplier = {
+          value: res.data.id,
+          label: `${res.data.contact_code} - ${res.data.name} ${phoneNumber ? `(${phoneNumber})` : ''}`,
+          contact: res.data
+        };
+        setSuppliers((prev) => [...prev, newSupplier]);
+        handleSupplierChange(newSupplier);
+        Toast.fire({ icon: 'success', title: 'Supplier saved to Directory!' });
+      } else {
+        Toast.fire({ icon: 'error', title: res.message || 'Failed to save supplier' });
+      }
+    } catch (err) { 
+      console.error(err);
+      Toast.fire({ icon: 'error', title: 'Failed to save supplier' }); 
+    } finally { 
+      setIsLoadingSuppliers(false); 
+    }
+  };
   
   const [paymentStatus, setPaymentStatus] = useState('paid');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
@@ -117,9 +213,24 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
 
   const handleMultiCheckout = async () => {
     if (cart.length === 0) return;
+
+    // --- NEW: FORCE CUSTOMER SELECTION ---
+    if (!contactId && clientName.trim() === '') {
+      return Toast.fire({ 
+        icon: 'error', 
+        title: 'Validation Error: Please select or create a Supplier!' 
+      });
+    }
+    // -------------------------------------
     
-    if ((paymentStatus === 'credit' || paymentStatus === 'partial') && clientName.trim() === '') {
-      return Toast.fire({ icon: 'error', title: 'Supplier Name required for Credit/Partial payments!' });
+    // VALIDATE PAYMENTS & CRM LINKING FOR DEBTS
+    if (paymentStatus === 'credit' || paymentStatus === 'partial') {
+      if (!contactId) {
+        return Toast.fire({ 
+          icon: 'error', 
+          title: 'Action Denied: Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
+        });
+      }
     }
     if (paymentStatus === 'partial') {
       const paidVal = Number(amountPaid);
@@ -166,6 +277,9 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
         fd.append('product_id', item.id); 
         fd.append('quantity', item.cartQty);
         fd.append('price_at_time', item.buy_price); 
+
+        fd.append('contact_id', contactId || ''); 
+        fd.append('client_name', clientName || 'Unknown Supplier');
         
         fd.append('client_name', clientName); 
         fd.append('client_phone', clientPhone); 
@@ -331,9 +445,34 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
           </div>
 
           <div className="p-3 bg-slate-50 border-t border-slate-200 space-y-2 shrink-0">
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" placeholder="Supplier Name" value={clientName} onChange={(e) => setClientName(e.target.value)} className="w-full px-3 py-1.5 text-xs lg:text-sm border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20" />
-              <input type="text" placeholder="Phone Number" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className="w-full px-3 py-1.5 text-xs lg:text-sm border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20" />
+            <div className="mb-2">
+              <CreatableSelect
+                isClearable
+                isLoading={isLoadingSuppliers}
+                options={suppliers}
+                placeholder="Search or add supplier..."
+                value={
+                  contactId 
+                    ? suppliers.find(c => c.value === contactId) 
+                    : clientName && clientName !== 'Unknown Supplier'
+                      ? { label: `${clientName} (Receipt Only)`, value: 'unknown' }
+                      : null
+                }
+                onChange={handleSupplierChange}
+                onCreateOption={handleCreateSupplier}
+                formatCreateLabel={(inputValue) => `+ Save & Use "${inputValue}" to Suppliers`}
+                styles={{
+                  control: (base) => ({
+                    ...base,
+                    backgroundColor: '#fff',
+                    borderColor: '#cbd5e1',
+                    borderRadius: '0.5rem',
+                    minHeight: '36px',
+                    fontSize: '0.875rem',
+                    fontWeight: '700'
+                  })
+                }}
+              />
             </div>
             
             <div className="grid grid-cols-2 gap-2">
@@ -368,7 +507,7 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
             {(paymentStatus === 'partial' || paymentStatus === 'credit') && (
               <div className="flex items-center gap-2 bg-white px-3 py-1 border border-slate-300 rounded-lg focus-within:border-blue-600 focus-within:ring-1">
                 <span className="text-[10px] lg:text-xs font-bold text-slate-500 whitespace-nowrap">Deadline:</span>
-                <input type="date" value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} className="w-full outline-none text-xs lg:text-sm font-bold text-slate-800 bg-transparent" />
+                <input type="date" min={new Date().toISOString().split('T')[0]} value={deadlineDate} onChange={(e) => setDeadlineDate(e.target.value)} className="w-full outline-none text-xs lg:text-sm font-bold text-slate-800 bg-transparent" />
               </div>
             )}
           </div>

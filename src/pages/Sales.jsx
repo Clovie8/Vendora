@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../config/api';
 import { formatRwf, formatDateCell, getImageUrl } from '../utils/formatters';
 import PosSaleModal from '../components/PosSaleModal';
+import CreatableSelect from 'react-select/creatable';
 import Swal from 'sweetalert2';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 
@@ -38,6 +39,29 @@ export default function Sales() {
   const [isProductsModalOpen, setIsProductsModalOpen] = useState(false);
   const [invoiceProducts, setInvoiceProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
+
+  // --- NEW: CRM Customers State ---
+  const [customers, setCustomers] = useState([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+
+  // Fetch the customers list once when the component loads
+  useEffect(() => {
+    const fetchCustomers = async () => {
+      try {
+        const res = await apiFetch('get_contacts&type=Customer');
+        if (res.status === 'success') {
+          // Format the database data so react-select can read it safely
+          const formatted = res.data.map(c => ({
+            value: c.id,
+            label: `${c.contact_code} - ${c.name} ${c.phone ? `(${c.phone})` : ''}`,
+            contact: c
+          }));
+          setCustomers(formatted);
+        }
+      } catch (e) { console.error("Failed to fetch customers"); }
+    };
+    fetchCustomers();
+  }, []);
 
   useEffect(() => {
     apiFetch('get_company').then(res => { if (res.status === 'success') setBusinessSettings(res.data); });
@@ -116,11 +140,100 @@ export default function Sales() {
     setIsEditModalOpen(true); 
   };
 
+
+
+  // --- NEW: Smart Dropdown Actions ---
+  const handleCustomerChange = (selectedOption) => {
+    if (selectedOption) {
+      // Auto-fill the form with the chosen customer's details!
+      setEditTransaction({
+        ...editTransaction,
+        contact_id: selectedOption.value,
+        client_name: selectedOption.contact.name,
+        client_phone: selectedOption.contact.phone || ''
+      });
+    } else {
+      // They cleared the dropdown (Walk-in)
+      setEditTransaction({ ...editTransaction, contact_id: null, client_name: 'Walk-in', client_phone: '' });
+    }
+  };
+
+  const handleCreateCustomer = async (inputValue) => {
+    const result = await Swal.fire({
+      title: `Customer: ${inputValue}`,
+      html: `
+        <div class="text-sm text-slate-500 mb-3">Enter phone number (optional)</div>
+        <input id="swal-phone" class="swal2-input" style="margin-top: 0;" placeholder="e.g., 078...">
+      `,
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: 'Save to CRM',
+      denyButtonText: 'Receipt Only',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+      denyButtonColor: '#64748b',
+      customClass: { popup: 'rounded-2xl shadow-xl' },
+      preConfirm: () => {
+        return document.getElementById('swal-phone').value;
+      }
+    });
+
+    if (result.isDismissed && result.dismiss !== Swal.DismissReason.deny) {
+      return;
+    }
+
+    if (result.isDenied) {
+      const phone = document.getElementById('swal-phone').value;
+      // --- THE FIX FOR SALES.JSX ---
+      setEditTransaction({
+        ...editTransaction,
+        contact_id: null,
+        client_name: inputValue,
+        client_phone: phone
+      });
+      // -----------------------------
+      Toast.fire({ icon: 'info', title: 'Using name for this receipt only' });
+      return;
+    }
+
+    const phoneNumber = result.value;
+    setIsLoadingCustomers(true);
+    try {
+      const formPayload = new FormData();
+      formPayload.append('name', inputValue);
+      formPayload.append('phone', phoneNumber || '');
+      formPayload.append('type', 'Customer');
+      
+      const res = await apiFetch('create_contact', { method: 'POST', body: formPayload });
+      if (res.status === 'success') {
+        const newCustomer = {
+          value: res.data.id,
+          label: `${res.data.contact_code} - ${res.data.name} ${phoneNumber ? `(${phoneNumber})` : ''}`,
+          contact: res.data
+        };
+        setCustomers((prev) => [...prev, newCustomer]);
+        handleCustomerChange(newCustomer);
+        Toast.fire({ icon: 'success', title: 'Customer saved to Directory!' });
+      } else {
+        Toast.fire({ icon: 'error', title: res.message || 'Failed to save customer' });
+      }
+    } catch (err) { 
+      console.error(err);
+      Toast.fire({ icon: 'error', title: 'Failed to save customer' }); 
+    } finally { 
+      setIsLoadingCustomers(false); 
+    }
+  };
+
+
+
   const handleEditSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     const formData = new FormData();
     formData.append('id', editTransaction.id);
+
+    formData.append('contact_id', editTransaction.contact_id || '');
     
     formData.append('client_name', editTransaction.client_name || '');
     formData.append('client_phone', editTransaction.client_phone || '');
@@ -554,7 +667,10 @@ export default function Sales() {
                       </td>
                       <td className="px-3 py-2">
                         <div className="font-bold text-slate-700 text-[11px] truncate max-w-[100px]">{r.client_name || 'Walk-in'}</div>
-                        <div className="text-[10px] text-slate-400">{r.client_phone || '-'}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {r.contact_code && <span className="text-[10px] text-blue-600 font-bold mt-0.5">{r.contact_code}</span>}
+                          {r.client_phone || '-'}
+                        </div>
                       </td>
                       <td className="px-3 py-2 font-bold text-blue-600 text-[11px] truncate max-w-[80px]">{r.user_name || 'System'}</td>
                       
@@ -684,7 +800,33 @@ export default function Sales() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Client/Supplier Name</label>
-                    <input type="text" value={editTransaction.client_name || ''} onChange={(e) => setEditTransaction({...editTransaction, client_name: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none text-sm font-medium text-slate-800" />
+                    <CreatableSelect
+                      isClearable
+                      isLoading={isLoadingCustomers}
+                      options={customers}
+                      placeholder="Search or add customer..."
+                      value={
+                        editTransaction.contact_id
+                          ? customers.find(c => c.value === editTransaction.contact_id)
+                          : editTransaction.client_name && editTransaction.client_name !== 'Walk-in'
+                            ? { label: `${editTransaction.client_name} (Receipt Only)`, value: 'walk-in' }
+                            : null
+                      }
+                      onChange={handleCustomerChange}
+                      onCreateOption={handleCreateCustomer}
+                      formatCreateLabel={(inputValue) => `+ Save "${inputValue}" to CRM`}
+                      styles={{
+                        control: (base) => ({
+                          ...base,
+                          backgroundColor: '#f8fafc',
+                          borderColor: '#cbd5e1',
+                          borderRadius: '0.5rem',
+                          padding: '1px',
+                          fontSize: '0.875rem',
+                          fontWeight: '500'
+                        })
+                      }}
+                    />
                   </div>
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Phone Number</label>
@@ -714,6 +856,7 @@ export default function Sales() {
                     <label className="block text-[10px] font-bold text-red-600 uppercase mb-1">Payment Deadline Date</label>
                     <input 
                       type="date" 
+                      min={new Date().toISOString().split('T')[0]}
                       value={editTransaction.deadline_date || ''} 
                       onChange={(e) => setEditTransaction({...editTransaction, deadline_date: e.target.value})} 
                       className="w-full px-3 py-2 bg-white border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 outline-none text-sm font-medium text-slate-800" 

@@ -23,6 +23,7 @@ import Batches from './pages/Batches';
 import VendoraHQ from './hq/VendoraHQ';
 import HQLogin from './hq/HQLogin';
 import NewSale from './pages/NewSale';
+import Contacts from './pages/Contacts';
 
 
 
@@ -54,6 +55,7 @@ const ProtectedHQRoute = ({ children }) => {
           <Route path="purchases" element={<Purchases />} />
           <Route path="expenses" element={<Expenses />} />
           <Route path="credits" element={<Credits />} />
+          <Route path="contacts" element={<Contacts />} />
           <Route path="reports/tax" element={<TaxReport />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/:type" element={<Reports />} />
