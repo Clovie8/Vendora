@@ -645,9 +645,12 @@ export default function Settings() {
                     </div>
 
                     <div className="pt-4 flex justify-end">
-                       <button className="w-full sm:w-auto px-6 py-3 bg-[#0B2B5E] hover:bg-blue-900 text-white text-[13px] font-bold rounded-xl transition-all shadow-[0_4px_12px_rgba(11,43,94,0.2)] hover:-translate-y-0.5">
-                         Contact Support to Renew/Upgrade
-                       </button>
+                      <button 
+                        onClick={() => window.open('https://vendorapos.app/contact/', '_blank', 'noopener,noreferrer')}
+                        className="w-full sm:w-auto px-6 py-3 bg-[#0B2B5E] hover:bg-blue-900 text-white text-[13px] font-bold rounded-xl transition-all shadow-[0_4px_12px_rgba(11,43,94,0.2)] hover:-translate-y-0.5"
+                      >
+                        Contact Support to Renew/Upgrade
+                      </button>
                     </div>
                   </>
                 )}

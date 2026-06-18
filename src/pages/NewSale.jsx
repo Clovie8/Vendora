@@ -131,8 +131,13 @@ export default function NewSale() {
     const result = await Swal.fire({
       title: `Customer: ${inputValue}`,
       html: `
-        <div class="text-sm text-slate-500 mb-3">Enter phone number (optional)</div>
-        <input id="swal-phone" class="swal2-input" style="margin-top: 0;" placeholder="e.g., 078...">
+        <div class="text-xs font-semibold text-slate-600 mb-1.5 text-left pl-1">Phone Number (Optional)</div>
+        <input 
+          id="swal-phone" 
+          type="tel" 
+          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" 
+          placeholder="e.g., 078..."
+        >
       `,
       showDenyButton: true,
       showCancelButton: true,

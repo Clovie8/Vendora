@@ -53,8 +53,13 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
     const result = await Swal.fire({
       title: `Supplier: ${inputValue}`,
       html: `
-        <div class="text-sm text-slate-500 mb-3">Enter phone number (optional)</div>
-        <input id="swal-phone" class="swal2-input" style="margin-top: 0;" placeholder="e.g., 078...">
+        <div class="text-xs font-semibold text-slate-600 mb-1.5 text-left pl-1">Phone Number (Optional)</div>
+        <input 
+          id="swal-phone" 
+          type="tel" 
+          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" 
+          placeholder="e.g., 078..."
+        >
       `,
       showDenyButton: true,
       showCancelButton: true,
@@ -389,7 +394,7 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
         </div>
 
         {/* RIGHT: TIGHT CART */}
-        <div className="flex-1 lg:flex-none w-full lg:w-[340px] xl:w-[380px] flex flex-col bg-white rounded-xl lg:rounded-2xl border border-slate-200 shadow-sm overflow-hidden shrink-0 min-h-[60vh] lg:min-h-0">
+        <div className="flex-1 lg:flex-none w-full lg:w-[340px] xl:w-[380px] flex flex-col bg-white rounded-xl lg:rounded-2xl border border-slate-200 shadow-sm overflow-hidden shrink-0 min-h-[60vh] lg:min-h-0 mb-20 lg:mb-0">
           <div className="p-3 bg-slate-900 text-white flex justify-between items-center shrink-0">
             <h2 className="text-sm font-bold">Purchase Order</h2>
             <span className="bg-blue-600 text-white text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide">{cart.length} Items</span>
@@ -512,7 +517,7 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
             )}
           </div>
 
-          <div className="p-3 lg:p-4 bg-white border-t border-slate-200 shrink-0">
+          <div className="p-3 pb-6 lg:p-4 bg-white border-t border-slate-200 shrink-0">
             <div className="flex justify-between items-end mb-3">
               <span className="text-slate-500 font-bold uppercase text-[10px] tracking-wider">Total Cost</span>
               <span className="text-xl lg:text-2xl font-black text-red-600">{formatRwf(cartTotal)}</span>

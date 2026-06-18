@@ -414,7 +414,7 @@ export default function Inventory() {
                   </div>
                 )}
 
-                <div>
+                {/* <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">{itemType === 'service' ? 'Service Image' : 'Product Image'}</label>
                   <input type="file" name="image" accept="image/*" className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-slate-200 rounded-lg p-1" />
                   {editingProduct?.image && (
@@ -423,7 +423,7 @@ export default function Inventory() {
                       <span className="text-xs text-slate-400">Current Image</span>
                     </div>
                   )}
-                </div>
+                </div> */}
 
                 <div>
                   <label className="block text-sm font-semibold text-slate-700 mb-1">{itemType === 'service' ? 'Service Name' : 'Product Name'}</label>

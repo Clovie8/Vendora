@@ -668,7 +668,7 @@ export default function Sales() {
                       <td className="px-3 py-2">
                         <div className="font-bold text-slate-700 text-[11px] truncate max-w-[100px]">{r.client_name || 'Walk-in'}</div>
                         <div className="text-[10px] text-slate-400 mt-0.5">
-                          {r.contact_code && <span className="text-[10px] text-blue-600 font-bold mt-0.5">{r.contact_code}</span>}
+                          {r.contact_code && <span className="text-[10px] text-blue-600 font-bold mt-0.5 mr-1">{r.contact_code}</span>}
                           {r.client_phone || '-'}
                         </div>
                       </td>
