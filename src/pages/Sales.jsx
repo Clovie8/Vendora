@@ -429,9 +429,9 @@ export default function Sales() {
             <div class="bill-title">BILL TO</div>
             <div class="client-grid">
               <span>COMPANY NAME:</span> <span>${clientName}</span>
-              <span>TIN:</span> <span>-</span>
+              <span>TIN:</span> <span>${invoice.tin_number || '-'}</span>
               <span>PHONE:</span> <span>${clientPhone}</span>
-              <span>EMAIL:</span> <span>-</span>
+              <span style="text-transform: lowercase;">EMAIL:</span> <span style="text-transform: lowercase;">${invoice.client_email || '-'}</span>
             </div>
           </div>
 
@@ -553,7 +553,8 @@ export default function Sales() {
             <td>Client Address: .........</td>
           </tr>
           <tr>
-            <td>TIN: </td>
+            {/* --- REFINED: Inject dynamic TIN --- */}
+            <td>TIN: ${invoice.tin_number || '-'}</td>
             <td>Tel: ${clientPhone}</td>
           </tr>
         </table>

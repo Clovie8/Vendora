@@ -49,7 +49,6 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
   };
 
   const handleCreateSupplier = async (inputValue) => {
-    // 1. Ask the Cashier what they want to do
     const result = await Swal.fire({
       title: `Supplier: ${inputValue}`,
       html: `
@@ -57,8 +56,15 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
         <input 
           id="swal-phone" 
           type="tel" 
-          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" 
+          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-3" 
           placeholder="e.g., 078..."
+        >
+        <div class="text-xs font-semibold text-slate-600 mb-1.5 text-left pl-1">TIN Number (Optional)</div>
+        <input 
+          id="swal-tin" 
+          type="number" 
+          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" 
+          placeholder="e.g., 101234567"
         >
       `,
       showDenyButton: true,
@@ -66,11 +72,14 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
       confirmButtonText: 'Save to CRM',
       denyButtonText: 'Receipt Only',
       cancelButtonText: 'Cancel',
-      confirmButtonColor: '#ea580c', // Orange for CRM Save
-      denyButtonColor: '#64748b',    // Slate for Receipt Only
+      confirmButtonColor: '#ea580c', 
+      denyButtonColor: '#64748b',    
       customClass: { popup: 'rounded-2xl shadow-xl' },
       preConfirm: () => {
-        return document.getElementById('swal-phone').value;
+        return {
+          phone: document.getElementById('swal-phone').value,
+          tin: document.getElementById('swal-tin').value
+        };
       }
     });
 
@@ -87,12 +96,13 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
       return;
     }
 
-    const phoneNumber = result.value;
+    const { phone: phoneNumber, tin: tinNumber } = result.value;
     setIsLoadingSuppliers(true);
     try {
       const formPayload = new FormData();
       formPayload.append('name', inputValue);
       formPayload.append('phone', phoneNumber || '');
+      formPayload.append('tin_number', tinNumber || ''); // <-- REFINED
       formPayload.append('type', 'Supplier');
       
       const res = await apiFetch('create_contact', { method: 'POST', body: formPayload });
@@ -223,7 +233,7 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
     if (!contactId && clientName.trim() === '') {
       return Toast.fire({ 
         icon: 'error', 
-        title: 'Validation Error: Please select or create a Supplier!' 
+        title: 'Please select or create a Supplier!' 
       });
     }
     // -------------------------------------
@@ -233,7 +243,7 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
       if (!contactId) {
         return Toast.fire({ 
           icon: 'error', 
-          title: 'Action Denied: Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
+          title: 'Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
         });
       }
     }

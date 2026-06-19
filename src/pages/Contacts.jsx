@@ -24,7 +24,7 @@ export default function Contacts() {
   const [editingContact, setEditingContact] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const initialForm = { name: '', phone: '', email: '', type: 'Customer' };
+  const initialForm = { name: '', phone: '', email: '', tin_number: '', type: 'Customer' };
   const [formData, setFormData] = useState(initialForm);
 
   // --- DATA FETCHING ---
@@ -57,6 +57,7 @@ export default function Contacts() {
         name: contact.name || '',
         phone: contact.phone || '',
         email: contact.email || '',
+        tin_number: contact.tin_number || '',
         type: contact.type || 'Customer'
       });
     } else {
@@ -213,6 +214,7 @@ export default function Contacts() {
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Name</th>
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Type</th>
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Contact Info</th>
+                <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider">TIN Number</th>
                 <th className="p-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
               </tr>
             </thead>
@@ -246,6 +248,15 @@ export default function Contacts() {
                     <td className="p-4">
                       <div className="text-sm font-medium text-slate-700">{contact.phone || '-'}</div>
                       <div className="text-xs text-slate-400">{contact.email}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {contact.tin_number ? (
+                        <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
+                          {contact.tin_number}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs">-</span>
+                      )}
                     </td>
                     <td className="p-4">
                       <div className="flex justify-end gap-2">
@@ -340,6 +351,21 @@ export default function Contacts() {
                     placeholder="name@example.com"
                   />
                 </div>
+                
+                {/* --- REFINED: Made full-width and updated styles to match --- */}
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wide">
+                    TIN Number <span className="text-slate-400 font-medium normal-case tracking-normal">(Optional)</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    value={formData.tin_number || ''} 
+                    onChange={(e) => setFormData({...formData, tin_number: e.target.value})} 
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-sm font-medium" 
+                    placeholder="e.g., 101234567"
+                  />
+                </div>
+                {/* ------------------------------------------------------------ */}
               </div>
 
               

@@ -3,6 +3,7 @@ import { apiFetch } from '../config/api';
 import Swal from 'sweetalert2';
 import html2pdf from 'html2pdf.js';
 import useDocumentTitle from '../hooks/useDocumentTitle';
+import CreatableSelect from 'react-select/creatable';
 
 const Toast = Swal.mixin({
   toast: true, position: 'top-end', showConfirmButton: false, timer: 2000,
@@ -29,6 +30,12 @@ export default function Proformas() {
   const [clientTin, setClientTin] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [clientEmail, setClientEmail] = useState('');
+
+  // CRM States ---
+  const [contactId, setContactId] = useState(null);
+  const [customers, setCustomers] = useState([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+
   const [status, setStatus] = useState('Draft');
   const [cart, setCart] = useState([]);
   
@@ -55,17 +62,28 @@ export default function Proformas() {
   const fetchInitialData = async () => {
     setLoading(true);
     try {
-      const [profRes, compRes, authRes, prodRes] = await Promise.all([
+      const [profRes, compRes, authRes, prodRes, custRes] = await Promise.all([
         apiFetch('get_proformas'),
         apiFetch('get_company'),
         apiFetch('get_profile'),
-        apiFetch('fetch&limit=1000') 
+        apiFetch('fetch&limit=1000'),
+        apiFetch('get_contacts&type=Customer') // <-- NEW: Fetch Directory
       ]);
       
       if (profRes.status === 'success') setProformas(profRes.data);
       if (compRes.status === 'success') setBusinessSettings(compRes.data);
       if (authRes.status === 'success') setUserRole(authRes.data.role);
       if (prodRes.status === 'success') setProducts(prodRes.data);
+      
+      // --- NEW: Format Customers for Dropdown ---
+      if (custRes.status === 'success') {
+        setCustomers(custRes.data.map(c => ({
+          value: c.id,
+          label: `${c.contact_code} - ${c.name} ${c.phone ? `(${c.phone})` : ''}`,
+          contact: c
+        })));
+      }
+      // ------------------------------------------
     } catch (err) {
       console.error(err);
     } finally {
@@ -77,9 +95,110 @@ export default function Proformas() {
   const totalAmount = cart.reduce((sum, item) => sum + (item.sell_price * item.cartQty), 0);
   const taxAmount = isVatRegistered ? Math.round((totalAmount * 18) / 118) : 0;
   const subtotal = totalAmount - taxAmount;
+  
+
+  // --- NEW: Smart Dropdown Actions ---
+  const handleCustomerChange = (selectedOption) => {
+    if (selectedOption) {
+      setContactId(selectedOption.value);
+      setClientName(selectedOption.contact.name);
+      setClientTin(selectedOption.contact.tin_number || '');
+      setClientPhone(selectedOption.contact.phone || '');
+      setClientEmail(selectedOption.contact.email || '');
+    } else {
+      setContactId(null);
+      setClientName('');
+      setClientTin('');
+      setClientPhone('');
+      setClientEmail('');
+    }
+  };
+
+  const handleCreateCustomer = async (inputValue) => {
+    const result = await Swal.fire({
+      title: `Customer: ${inputValue}`,
+      html: `
+        <div class="text-xs font-semibold text-slate-600 mb-1.5 text-left pl-1">Phone Number (Optional)</div>
+        <input id="swal-phone" type="tel" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-3" placeholder="e.g., 078...">
+        
+        <div class="text-xs font-semibold text-slate-600 mb-1.5 text-left pl-1">TIN Number (Optional)</div>
+        <input id="swal-tin" type="number" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-3" placeholder="e.g., 101234567">
+        
+        <div class="text-xs font-semibold text-slate-600 mb-1.5 text-left pl-1">Email Address (Optional)</div>
+        <input id="swal-email" type="email" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" placeholder="name@example.com">
+      `,
+      showDenyButton: true,
+      showCancelButton: true,
+      confirmButtonText: 'Save to CRM',
+      denyButtonText: 'Proforma Only',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#2563eb',
+      denyButtonColor: '#64748b',
+      customClass: { popup: 'rounded-2xl shadow-xl' },
+      preConfirm: () => ({
+        phone: document.getElementById('swal-phone').value,
+        tin: document.getElementById('swal-tin').value,
+        email: document.getElementById('swal-email').value
+      })
+    });
+
+    if (result.isDismissed && result.dismiss !== Swal.DismissReason.deny) return;
+
+    if (result.isDenied) {
+      setContactId(null);
+      setClientName(inputValue);
+      setClientPhone(document.getElementById('swal-phone').value);
+      setClientTin(document.getElementById('swal-tin').value);
+      setClientEmail(document.getElementById('swal-email').value);
+      Toast.fire({ icon: 'info', title: 'Using details for this quote only' });
+      return;
+    }
+
+    const { phone, tin, email } = result.value;
+    setIsLoadingCustomers(true);
+    try {
+      const formPayload = new FormData();
+      formPayload.append('name', inputValue);
+      formPayload.append('phone', phone || '');
+      formPayload.append('tin_number', tin || '');
+      formPayload.append('email', email || '');
+      formPayload.append('type', 'Customer');
+      
+      const res = await apiFetch('create_contact', { method: 'POST', body: formPayload });
+      if (res.status === 'success') {
+        const newCustomer = {
+          value: res.data.id,
+          label: `${res.data.contact_code} - ${res.data.name} ${phone ? `(${phone})` : ''}`,
+          contact: res.data
+        };
+        // 1. Add them to the dropdown list
+        setCustomers((prev) => [...prev, newCustomer]);
+        
+        // 2. Select them in the dropdown
+        setContactId(newCustomer.value);
+        setClientName(newCustomer.contact.name);
+        
+        // 3. --- REFINED: Update the local preview states instantly! ---
+        setClientPhone(phone || '');
+        setClientTin(tin || '');
+        setClientEmail(email || '');
+        // --------------------------------------------------------------
+        
+        Toast.fire({ icon: 'success', title: 'Customer saved to CRM!' });
+      } else {
+        Toast.fire({ icon: 'error', title: res.message || 'Failed to save customer' });
+      }
+    } catch (err) {
+      Toast.fire({ icon: 'error', title: 'Failed to save customer' });
+    } finally {
+      setIsLoadingCustomers(false);
+    }
+  };
+
 
   const handleOpenBuilder = () => {
     setEditingId(null);
+    setContactId(null);
     setCart([]); setClientName(''); setClientTin(''); setClientPhone(''); setClientEmail('');
     setStatus('Draft');
     setIsBuilderOpen(true);
@@ -94,6 +213,7 @@ export default function Proformas() {
       setClientTin(pi.client_tin || '');
       setClientPhone(pi.client_phone || '');
       setClientEmail(pi.client_email || '');
+      setContactId(pi.contact_id || null);
       setStatus(pi.status || 'Draft');
       
       setCart(pi.items.map(i => ({
@@ -141,6 +261,7 @@ export default function Proformas() {
 
     setIsSubmitting(true);
     const payload = {
+      contact_id: contactId,
       id: editingId,
       status: status,
       client_name: clientName,
@@ -501,25 +622,44 @@ const handleDownloadPDF = async (proformaId) => {
                 
                 {/* Client Details Box */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                  <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">Client Information</h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Company / Client Name *</label>
-                      <input type="text" required value={clientName} onChange={(e) => setClientName(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
+                  <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">Client Information *</h4>
+                  
+                  <CreatableSelect
+                    isClearable
+                    isLoading={isLoadingCustomers}
+                    options={customers}
+                    placeholder="Search or type a new company name..."
+                    value={
+                      contactId 
+                        ? customers.find(c => c.value === contactId) 
+                        : clientName 
+                          ? { label: `${clientName} (Proforma Only)`, value: 'custom' }
+                          : null
+                    }
+                    onChange={handleCustomerChange}
+                    onCreateOption={handleCreateCustomer}
+                    formatCreateLabel={(inputValue) => `+ Save & Use "${inputValue}"`}
+                    styles={{
+                      control: (base) => ({
+                        ...base,
+                        backgroundColor: '#f8fafc',
+                        borderColor: '#e2e8f0',
+                        borderRadius: '0.75rem',
+                        padding: '2px',
+                        fontSize: '0.875rem',
+                        fontWeight: '700'
+                      })
+                    }}
+                  />
+
+                  {/* Clean summary of what will be printed */}
+                  {(clientPhone || clientTin || clientEmail) && (
+                    <div className="mt-4 p-3.5 bg-blue-50/50 border border-blue-100 rounded-xl text-xs flex flex-wrap gap-x-6 gap-y-2 text-slate-600">
+                      {clientPhone && <div className="flex items-center gap-1.5"><span className="font-bold text-blue-800">Phone:</span> {clientPhone}</div>}
+                      {clientTin && <div className="flex items-center gap-1.5"><span className="font-bold text-blue-800">TIN:</span> {clientTin}</div>}
+                      {clientEmail && <div className="flex items-center gap-1.5"><span className="font-bold text-blue-800">Email:</span> {clientEmail}</div>}
                     </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">TIN Number</label>
-                      <input type="text" value={clientTin} onChange={(e) => setClientTin(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Phone Number</label>
-                      <input type="text" value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Email Address</label>
-                      <input type="email" value={clientEmail} onChange={(e) => setClientEmail(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm" />
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Add Items Box */}

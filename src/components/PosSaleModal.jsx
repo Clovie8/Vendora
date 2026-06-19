@@ -55,7 +55,6 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
   };
 
   const handleCreateCustomer = async (inputValue) => {
-    // 1. Ask the Cashier what they want to do
     const result = await Swal.fire({
       title: `Customer: ${inputValue}`,
       html: `
@@ -63,8 +62,15 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
         <input 
           id="swal-phone" 
           type="tel" 
-          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" 
+          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-3" 
           placeholder="e.g., 078..."
+        >
+        <div class="text-xs font-semibold text-slate-600 mb-1.5 text-left pl-1">TIN Number (Optional)</div>
+        <input 
+          id="swal-tin" 
+          type="number" 
+          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" 
+          placeholder="e.g., 101234567"
         >
       `,
       showDenyButton: true,
@@ -72,36 +78,37 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
       confirmButtonText: 'Save to CRM',
       denyButtonText: 'Receipt Only',
       cancelButtonText: 'Cancel',
-      confirmButtonColor: '#2563eb', // Blue for CRM Save
-      denyButtonColor: '#64748b',    // Slate for Receipt Only
+      confirmButtonColor: '#2563eb', 
+      denyButtonColor: '#64748b',    
       customClass: { popup: 'rounded-2xl shadow-xl' },
       preConfirm: () => {
-        return document.getElementById('swal-phone').value;
+        return {
+          phone: document.getElementById('swal-phone').value,
+          tin: document.getElementById('swal-tin').value
+        };
       }
     });
 
-    // 2. If they clicked Cancel or closed the popup, abort completely.
     if (result.isDismissed && result.dismiss !== Swal.DismissReason.deny) {
       return;
     }
 
-    // 3. If they clicked "Receipt Only" (The Deny Button)
     if (result.isDenied) {
       const phone = document.getElementById('swal-phone').value;
-      setContactId(null); // NULL means it won't save to the DB!
+      setContactId(null); 
       setClientName(inputValue);
       setClientPhone(phone);
       Toast.fire({ icon: 'info', title: 'Using name for this receipt only' });
       return;
     }
 
-    // 4. If they clicked "Save to CRM" (The Confirm Button)
-    const phoneNumber = result.value;
+    const { phone: phoneNumber, tin: tinNumber } = result.value;
     setIsLoadingCustomers(true);
     try {
       const formPayload = new FormData();
       formPayload.append('name', inputValue);
       formPayload.append('phone', phoneNumber || '');
+      formPayload.append('tin_number', tinNumber || ''); // <-- REFINED
       formPayload.append('type', 'Customer');
       
       const res = await apiFetch('create_contact', { method: 'POST', body: formPayload });
@@ -343,7 +350,7 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
     if (!contactId && clientName.trim() === '') {
       return Toast.fire({ 
         icon: 'error', 
-        title: 'Validation Error: Please select or create a Customer!' 
+        title: 'Please select or create a Customer!' 
       });
     }
     // -------------------------------------
@@ -353,7 +360,7 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
       if (!contactId) {
         return Toast.fire({ 
           icon: 'error', 
-          title: 'Action Denied: Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
+          title: 'Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
         });
       }
     }

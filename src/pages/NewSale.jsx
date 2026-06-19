@@ -135,8 +135,15 @@ export default function NewSale() {
         <input 
           id="swal-phone" 
           type="tel" 
-          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" 
+          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-3" 
           placeholder="e.g., 078..."
+        >
+        <div class="text-xs font-semibold text-slate-600 mb-1.5 text-left pl-1">TIN Number (Optional)</div>
+        <input 
+          id="swal-tin" 
+          type="number" 
+          class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all box-border mb-2" 
+          placeholder="e.g., 101234567"
         >
       `,
       showDenyButton: true,
@@ -148,7 +155,10 @@ export default function NewSale() {
       denyButtonColor: '#64748b',    // Slate for Receipt Only
       customClass: { popup: 'rounded-2xl shadow-xl' },
       preConfirm: () => {
-        return document.getElementById('swal-phone').value;
+        return {
+          phone: document.getElementById('swal-phone').value,
+          tin: document.getElementById('swal-tin').value
+        };
       }
     });
 
@@ -168,12 +178,13 @@ export default function NewSale() {
     }
 
     // 4. If they clicked "Save to CRM" (The Confirm Button)
-    const phoneNumber = result.value;
+   const { phone: phoneNumber, tin: tinNumber } = result.value;
     setIsLoadingCustomers(true);
     try {
       const formPayload = new FormData();
       formPayload.append('name', inputValue);
       formPayload.append('phone', phoneNumber || '');
+      formPayload.append('tin_number', tinNumber || '');
       formPayload.append('type', 'Customer');
       
       const res = await apiFetch('create_contact', { method: 'POST', body: formPayload });
@@ -454,7 +465,7 @@ export default function NewSale() {
     if (!contactId && clientName.trim() === '') {
       return Toast.fire({ 
         icon: 'error', 
-        title: 'Validation Error: Please select or create a Customer!' 
+        title: 'Please select or create a Customer!' 
       });
     }
     // -------------------------------------
@@ -465,7 +476,7 @@ export default function NewSale() {
       if (!contactId) {
         return Toast.fire({ 
           icon: 'error', 
-          title: 'Action Denied: Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
+          title: 'Credit or Partial payments require a permanent CRM Contact. Please click "+ New CRM" or select an existing one.' 
         });
       }
     }
@@ -726,7 +737,7 @@ export default function NewSale() {
       </div>
 
       {/* RIGHT: Active Order Sidebar */}
-      <div className="flex-none h-[65vh] min-h-[500px] lg:h-auto lg:flex-none w-full lg:w-[340px] xl:w-[380px] flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-0">
+      <div className="flex-none h-[65vh] min-h-[500px] lg:h-auto lg:flex-none w-full lg:w-[340px] xl:w-[380px] flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-0 mb-20 lg:mb-0">
         <div className="p-3 sm:p-4 border-b border-slate-100 bg-slate-900 text-white flex justify-between items-center shrink-0">
           <h2 className="text-sm sm:text-base font-bold flex items-center gap-2">Current Order</h2>
           <span className="bg-blue-600 text-white text-[10px] px-2.5 py-1 rounded-full font-bold uppercase tracking-wide">{cart.length} Lines</span>
@@ -855,7 +866,7 @@ export default function NewSale() {
         </div>
 
         {/* FINANCIAL SUMMARY */}
-        <div className="p-3 sm:p-4 bg-white border-t border-slate-100 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.03)] space-y-3 shrink-0">
+        <div className="p-3 pb-6 sm:p-4 sm:pb-4 bg-white border-t border-slate-100 shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.03)] space-y-3 shrink-0">
           
           <div className="flex justify-between items-end pb-1">
             <span className="text-slate-500 font-bold uppercase text-[9px] sm:text-[10px] tracking-wider">Total Amount</span>
