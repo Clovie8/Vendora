@@ -418,14 +418,14 @@ export default function Reports() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden section-to-print">
-        <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <div className="px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:justify-between items-start sm:items-center gap-4 sm:gap-0 bg-slate-50">
           <h3 className="font-bold text-slate-800 tracking-wide flex items-center gap-2">
             {currentReportTitle}
             {businessSettings?.vat_registered == 1 && reportType === 'sales' && (
               <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full uppercase tracking-wider">Net of VAT</span>
             )}
           </h3>
-          <div className="flex gap-2 section-to-print-hide">
+          <div className="flex gap-2 section-to-print-hide self-center sm:self-auto">
             <button onClick={handleExportCSV} disabled={reportData.data.length === 0} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-green-200 text-green-700 hover:bg-green-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold transition-colors"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Export CSV</button>
             <button onClick={handleDownloadPDF} disabled={reportData.data.length === 0} className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-xs font-bold transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg> 

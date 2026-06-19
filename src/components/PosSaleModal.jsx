@@ -403,7 +403,10 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
     try {
       const receiptNumber = `INV-${Date.now()}${Math.floor(Math.random() * 100)}`;
 
-      const promises = cart.map(item => {
+      let distributedPaid = 0;
+      const totalPaidNum = Number(amountPaid);
+
+      const promises = cart.map((item, index) => {
         const fd = new FormData();
         fd.append('type', 'sale'); 
         fd.append('product_id', item.id); 
@@ -413,7 +416,6 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
         fd.append('contact_id', contactId || ''); 
         fd.append('client_name', clientName || 'Walk-in');
         
-        fd.append('client_name', clientName); 
         fd.append('client_phone', clientPhone); 
         fd.append('payment_status', paymentStatus);
         fd.append('receipt_number', receiptNumber);
@@ -422,8 +424,13 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
         if (paymentStatus === 'paid') {
           itemAmountPaid = item.sell_price * item.cartQty;
         } else if (paymentStatus === 'partial') {
-          const itemRatio = (item.sell_price * item.cartQty) / cartTotal;
-          itemAmountPaid = (amountPaid * itemRatio).toFixed(2);
+          if (index === cart.length - 1) {
+            itemAmountPaid = (totalPaidNum - distributedPaid).toFixed(2);
+          } else {
+            const itemRatio = (item.sell_price * item.cartQty) / cartTotal;
+            itemAmountPaid = (totalPaidNum * itemRatio).toFixed(2);
+            distributedPaid += Number(itemAmountPaid); 
+          }
         }
         
         fd.append('amount_paid', itemAmountPaid);

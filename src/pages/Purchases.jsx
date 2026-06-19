@@ -520,8 +520,23 @@ export default function Purchases() {
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Phone Number</label>
-                    <input type="text" value={editTransaction.client_phone || ''} onChange={(e) => setEditTransaction({...editTransaction, client_phone: e.target.value})} className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-600 outline-none text-sm font-medium text-slate-800" />
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase">Phone Number</label>
+                      {/* Show a badge if locked to CRM */}
+                      {!!editTransaction.contact_id && <span className="text-[9px] text-blue-500 font-bold uppercase tracking-wider">CRM Locked</span>}
+                    </div>
+                    <input 
+                      type="text" 
+                      value={editTransaction.client_phone || ''} 
+                      onChange={(e) => setEditTransaction({...editTransaction, client_phone: e.target.value})} 
+                      disabled={!!editTransaction.contact_id}
+                      className={`w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none text-sm font-medium text-slate-800 transition-colors ${
+                        editTransaction.contact_id 
+                          ? 'opacity-60 cursor-not-allowed bg-slate-200 text-slate-500' // Locked styling
+                          : 'focus:ring-2 focus:ring-blue-600 bg-white'                 // Editable styling
+                      }`} 
+                      placeholder={editTransaction.contact_id ? '' : 'e.g. 078...'}
+                    />
                   </div>
                 </div>
 

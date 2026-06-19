@@ -521,7 +521,10 @@ export default function NewSale() {
     try {
       const receiptNumber = `INV-${Date.now()}${Math.floor(Math.random() * 100)}`;
 
-      const promises = cart.map(item => {
+      let distributedPaid = 0;
+      const totalPaidNum = Number(amountPaid);
+
+      const promises = cart.map((item, index) => {
         const formData = new FormData();
         formData.append('type', 'sale');
         formData.append('product_id', item.id);
@@ -538,9 +541,15 @@ export default function NewSale() {
         if (paymentStatus === 'paid') {
           itemAmountPaid = item.sell_price * item.cartQty;
         } else if (paymentStatus === 'partial') {
-          const itemRatio = (item.sell_price * item.cartQty) / cartTotal;
-          itemAmountPaid = (amountPaid * itemRatio).toFixed(2);
+          if (index === cart.length - 1) {
+            itemAmountPaid = (totalPaidNum - distributedPaid).toFixed(2);
+          } else {
+            const itemRatio = (item.sell_price * item.cartQty) / cartTotal;
+            itemAmountPaid = (totalPaidNum * itemRatio).toFixed(2);
+            distributedPaid += Number(itemAmountPaid); 
+          }
         }
+      
         
         formData.append('amount_paid', itemAmountPaid);
         formData.append('payment_method_used', paymentStatus === 'credit' ? '' : paymentMethod);

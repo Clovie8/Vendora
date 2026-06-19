@@ -286,7 +286,10 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
     try {
       const voucherNumber = `PO-${Date.now()}${Math.floor(Math.random() * 100)}`;
 
-      const promises = cart.map(item => {
+      let distributedPaid = 0;
+      const totalPaidNum = Number(amountPaid);
+
+      const promises = cart.map((item, index) => {
         const fd = new FormData();
         fd.append('type', 'purchase'); 
         fd.append('product_id', item.id); 
@@ -305,8 +308,13 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
         if (paymentStatus === 'paid') {
           itemAmountPaid = item.buy_price * item.cartQty;
         } else if (paymentStatus === 'partial') {
-          const itemRatio = (item.buy_price * item.cartQty) / cartTotal;
-          itemAmountPaid = (amountPaid * itemRatio).toFixed(2);
+          if (index === cart.length - 1) {
+            itemAmountPaid = (totalPaidNum - distributedPaid).toFixed(2);
+          } else {
+            const itemRatio = (item.buy_price * item.cartQty) / cartTotal;
+            itemAmountPaid = (totalPaidNum * itemRatio).toFixed(2);
+            distributedPaid += Number(itemAmountPaid); // Add to running total
+          }
         }
         
         fd.append('amount_paid', itemAmountPaid);
