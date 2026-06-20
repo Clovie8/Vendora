@@ -250,7 +250,19 @@ export default function NewSale() {
     } catch(e) {}
   };
 
-  // ✅ CHANGE TO THIS (Added item_type checks):
+  // --- NEW: Error Buzzer ---
+  const playBuzzer = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, ctx.currentTime);
+      osc.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } catch(e) {}
+  };
+
   const addToCart = (product) => {
     if (product.item_type !== 'service' && product.stock_quantity <= 0) return Toast.fire({ icon: 'error', title: 'Out of stock!' });
     
@@ -263,7 +275,8 @@ export default function NewSale() {
         }
         return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1 } : item);
       }
-      return [...prevCart, { ...product, cartQty: 1, serialText: '' }];
+      // REFINED: Use an array for serials
+      return [...prevCart, { ...product, cartQty: 1, scannedSerials: [] }];
     });
     setSearch('');
     setShowDropdown(false);
@@ -280,25 +293,32 @@ export default function NewSale() {
            return prevCart;
         }
         
-        const currentSerials = existing.serialText ? existing.serialText.split(/[\n,]+/).map(s => s.trim()).filter(s => s) : [];
+        // REFINED: Use array logic
+        const currentSerials = existing.scannedSerials || [];
         if (currentSerials.includes(serialNumber)) {
            Toast.fire({ icon: 'warning', title: 'Serial already scanned in cart!' });
            return prevCart;
         }
 
-        const newSerialText = existing.serialText ? existing.serialText + '\n' + serialNumber : serialNumber;
-        return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, serialText: newSerialText } : item);
+        const newSerials = [...currentSerials, serialNumber];
+        return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, scannedSerials: newSerials } : item);
       }
-      return [...prevCart, { ...product, cartQty: 1, serialText: serialNumber }];
+      // REFINED: Initialize with array
+      return [...prevCart, { ...product, cartQty: 1, scannedSerials: [serialNumber] }];
     });
   };
 
-  // ✅ CHANGE TO THIS:
   const updateCartQty = (id, newQty) => {
     if (newQty < 1) return setCart(cart.filter(item => item.id !== id));
     const prod = products.find(p => p.id === id);
     if (prod && prod.item_type !== 'service' && newQty > prod.stock_quantity) return Toast.fire({ icon: 'error', title: `Max stock is ${prod.stock_quantity}` });
-    setCart(cart.map(item => item.id === id ? { ...item, cartQty: newQty } : item));
+    
+    setCart(cart.map(item => item.id === id ? { 
+      ...item, 
+      cartQty: newQty,
+      // REFINED: Safely truncate the serials array if they reduce the quantity
+      scannedSerials: (item.scannedSerials || []).slice(0, newQty) 
+    } : item));
   };
 
   const updateCartPrice = (id, newPrice) => {
@@ -458,6 +478,41 @@ export default function NewSale() {
     printWindow.document.close();
   };
 
+  // --- NEW: Per-Item Event-Driven Scanner ---
+  const handleItemScan = (e, item) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = e.target.value.trim();
+      if (!val) return;
+
+      const currentSerials = item.scannedSerials || [];
+
+      // Check 1: Duplicate?
+      if (currentSerials.includes(val)) {
+        playBuzzer();
+        Toast.fire({ icon: 'error', title: 'Duplicate Serial in this box!' });
+        e.target.value = ''; 
+        return;
+      }
+
+      // Check 2: Limit Reached?
+      if (currentSerials.length >= item.cartQty) {
+        playBuzzer();
+        Toast.fire({ icon: 'error', title: 'Scan limit reached for this item!' });
+        e.target.value = '';
+        return;
+      }
+
+      // Success! Add it, beep, and clear input
+      const newSerials = [...currentSerials, val];
+      setCart(cart.map(i => i.id === item.id ? { ...i, scannedSerials: newSerials } : i));
+      playBeep();
+      e.target.value = '';
+    }
+  };
+
+
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
 
@@ -502,16 +557,14 @@ export default function NewSale() {
     // VALIDATE SERIALS
     for (let item of cart) {
       if (item.is_serialized == 1) {
-        const serials = item.serialText ? item.serialText.split(/[\n,]+/).map(s => s.trim()).filter(s => s) : [];
+        // Just grab the array from state
+        const serials = item.scannedSerials || [];
+        
         if (serials.length !== item.cartQty) {
-          return Swal.fire('Error', `Need exactly ${item.cartQty} serials for ${item.name}. You entered ${serials.length}.`, 'error');
+          return Swal.fire('Error', `Need exactly ${item.cartQty} serials for ${item.name}. You scanned ${serials.length}.`, 'error');
         }
         
-        const uniqueSerials = new Set(serials);
-        if (uniqueSerials.size !== serials.length) {
-          return Swal.fire('Duplicate Input', `You scanned duplicate serial numbers for ${item.name}.`, 'error');
-        }
-
+        // (Duplicates are already blocked by our UI)
         item.parsedSerials = serials; 
       }
     }
@@ -782,18 +835,50 @@ export default function NewSale() {
                     </div>
                   </div>  
                 </div>
-                {item.is_serialized == 1 && (
-                  <div className="w-full mt-1 border-t border-slate-100 pt-2">
-                    <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-1">Scan <span className="text-blue-600">{item.cartQty}</span> Serial(s)</label>
-                    <textarea 
-                      placeholder={`Scan/Type exactly ${item.cartQty} serial/IMEI numbers...`}
-                      value={item.serialText || ''}
-                      onChange={(e) => setCart(cart.map(i => i.id === item.id ? {...i, serialText: e.target.value} : i))}
-                      className="w-full px-3 py-2 text-[10px] border border-blue-200 rounded-md outline-none focus:border-blue-500 bg-blue-50/30 placeholder-slate-400 custom-scrollbar"
-                      rows="2"
-                    ></textarea>
-                  </div>
-                )}
+                {/* --- REFINED: DYNAMIC SCANNER UI --- */}
+                  {item.is_serialized == 1 && (
+                    <div className="w-full mt-1 border-t border-slate-100 pt-2">
+                      <div className="flex justify-between items-end mb-1.5">
+                        <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide">
+                          Scan <span className="text-blue-600">{item.cartQty}</span> Serial(s)
+                        </label>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                          (item.scannedSerials?.length || 0) === item.cartQty ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {(item.scannedSerials?.length || 0)} / {item.cartQty} Scanned
+                        </span>
+                      </div>
+                      
+                      {/* The Interceptor Input */}
+                      <input 
+                        type="text"
+                        onKeyDown={(e) => handleItemScan(e, item)}
+                        disabled={(item.scannedSerials?.length || 0) >= item.cartQty}
+                        placeholder={(item.scannedSerials?.length || 0) >= item.cartQty ? "Scan limit reached" : "Click & scan barcode..."}
+                        className="w-full px-2.5 py-1.5 text-[10px] border border-blue-200 rounded-md outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 bg-white placeholder-slate-400 shadow-inner disabled:bg-slate-50 disabled:cursor-not-allowed transition-all"
+                      />
+                      
+                      {/* The Visual Tag Grid */}
+                      {item.scannedSerials && item.scannedSerials.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-0.5">
+                          {item.scannedSerials.map((serial, idx) => (
+                            <div key={idx} className="flex items-center gap-1 bg-white border border-slate-200 shadow-sm px-1.5 py-1 rounded text-[10px] font-bold text-slate-700 animate-in zoom-in duration-200">
+                              {serial}
+                              <button 
+                                type="button" 
+                                onClick={() => setCart(cart.map(i => i.id === item.id ? {...i, scannedSerials: i.scannedSerials.filter((_, sIdx) => sIdx !== idx)} : i))}
+                                className="text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                title="Remove serial"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* -------------------------------------- */}
               </div>
             ))
           )}

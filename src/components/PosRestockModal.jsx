@@ -147,12 +147,39 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
     }
   }, [isOpen]);
 
+
+  const playBeep = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch(e) {}
+  };
+
+  // --- NEW: Error Buzzer ---
+  const playBuzzer = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, ctx.currentTime);
+      osc.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } catch(e) {}
+  };
+
+
   const addToCart = (product) => {
     const existing = cart.find(item => item.id === product.id);
     if (existing) {
       setCart(cart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1 } : item));
     } else {
-      setCart([...cart, { ...product, cartQty: 1, serialText: '' }]);
+      setCart([...cart, { ...product, cartQty: 1, scannedSerials: [] }]);
     }
     setPosSearch('');
   };
@@ -189,7 +216,11 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
   
   const updateCartQty = (id, newQty) => {
     if (newQty < 1) return setCart(cart.filter(item => item.id !== id));
-    setCart(cart.map(item => item.id === id ? { ...item, cartQty: newQty } : item));
+    setCart(cart.map(item => item.id === id ? { 
+      ...item, 
+      cartQty: newQty,
+      scannedSerials: (item.scannedSerials || []).slice(0, newQty) 
+    } : item));
   };
 
   const updateCartPrice = (id, newPrice) => {
@@ -224,6 +255,39 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
         </body></html>
     `);
     printWindow.document.close();
+  };
+
+  // --- NEW: Per-Item Event-Driven Scanner ---
+  const handleItemScan = (e, item) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = e.target.value.trim();
+      if (!val) return;
+
+      const currentSerials = item.scannedSerials || [];
+
+      // Check 1: Duplicate?
+      if (currentSerials.includes(val)) {
+        playBuzzer();
+        Toast.fire({ icon: 'error', title: 'Duplicate Serial in this box!' });
+        e.target.value = ''; // Instantly clear input
+        return;
+      }
+
+      // Check 2: Limit Reached?
+      if (currentSerials.length >= item.cartQty) {
+        playBuzzer();
+        Toast.fire({ icon: 'error', title: 'Scan limit reached for this item!' });
+        e.target.value = '';
+        return;
+      }
+
+      // Success! Add it, beep, and clear input
+      const newSerials = [...currentSerials, val];
+      setCart(cart.map(i => i.id === item.id ? { ...i, scannedSerials: newSerials } : i));
+      playBeep();
+      e.target.value = '';
+    }
   };
 
   const handleMultiCheckout = async () => {
@@ -266,18 +330,17 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
       return Toast.fire({ icon: 'error', title: 'Please select a deadline date to clear the debt!' });
     }
 
+    // VALIDATE SERIALS
     for (let item of cart) {
       if (item.is_serialized == 1) {
-        const serials = item.serialText ? item.serialText.split(/[\n,]+/).map(s => s.trim()).filter(s => s) : [];
+        // Just grab the array from state
+        const serials = item.scannedSerials || [];
+        
         if (serials.length !== item.cartQty) {
-          return Swal.fire('Error', `Need exactly ${item.cartQty} serials for ${item.name}. You entered ${serials.length}.`, 'error');
+          return Swal.fire('Error', `Need exactly ${item.cartQty} serials for ${item.name}. You scanned ${serials.length}.`, 'error');
         }
         
-        const uniqueSerials = new Set(serials);
-        if (uniqueSerials.size !== serials.length) {
-          return Swal.fire('Duplicate Input', `You have duplicate serial numbers in the box for ${item.name}.`, 'error');
-        }
-
+        // (Duplicates are already blocked by our UI, so no need to check again!)
         item.parsedSerials = serials; 
       }
     }
@@ -451,17 +514,50 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
                       </div>
                     </div>
                   </div>
+                  {/* --- REFINED: DYNAMIC SCANNER UI --- */}
                   {item.is_serialized == 1 && (
                     <div className="w-full pt-2 border-t border-slate-100">
-                      <textarea 
-                        placeholder={`Enter ${item.cartQty} serials...`}
-                        value={item.serialText || ''}
-                        onChange={(e) => setCart(cart.map(i => i.id === item.id ? {...i, serialText: e.target.value} : i))}
-                        className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 bg-white placeholder-slate-400"
-                        rows="2"
-                      ></textarea>
+                      <div className="flex justify-between items-end mb-1.5">
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wide">
+                          Scan <span className="text-blue-600">{item.cartQty}</span> Serial(s)
+                        </label>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                          (item.scannedSerials?.length || 0) === item.cartQty ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {(item.scannedSerials?.length || 0)} / {item.cartQty} Scanned
+                        </span>
+                      </div>
+                      
+                      {/* The Interceptor Input (Uncontrolled for max speed) */}
+                      <input 
+                        type="text"
+                        onKeyDown={(e) => handleItemScan(e, item)}
+                        disabled={(item.scannedSerials?.length || 0) >= item.cartQty}
+                        placeholder={(item.scannedSerials?.length || 0) >= item.cartQty ? "Scan limit reached" : "Click & scan barcode..."}
+                        className="w-full px-2.5 py-1.5 text-xs border border-blue-200 rounded-lg outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 bg-white placeholder-slate-400 shadow-inner disabled:bg-slate-50 disabled:cursor-not-allowed transition-all"
+                      />
+                      
+                      {/* The Visual Tag Grid */}
+                      {item.scannedSerials && item.scannedSerials.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar p-0.5">
+                          {item.scannedSerials.map((serial, idx) => (
+                            <div key={idx} className="flex items-center gap-1 bg-white border border-slate-200 shadow-sm px-1.5 py-1 rounded text-[10px] font-bold text-slate-700 animate-in zoom-in duration-200">
+                              {serial}
+                              <button 
+                                type="button" 
+                                onClick={() => setCart(cart.map(i => i.id === item.id ? {...i, scannedSerials: i.scannedSerials.filter((_, sIdx) => sIdx !== idx)} : i))}
+                                className="text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                title="Remove serial"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
+                  {/* -------------------------------------- */}
                 </div>
               ))
             )}

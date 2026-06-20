@@ -35,7 +35,36 @@ export default function Inventory() {
   // Dynamic Form State for Serials
   const [isSerialized, setIsSerialized] = useState(false);
   const [initialQty, setInitialQty] = useState(0);
-  const [serialNumbers, setSerialNumbers] = useState('');
+  
+  // --- NEW: Smart Scanner States ---
+  const [scannedSerials, setScannedSerials] = useState([]);
+  const [currentScan, setCurrentScan] = useState('');
+
+  // --- NEW: Audio Hardware Feedback ---
+  const playBeep = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch(e) {}
+  };
+
+  const playBuzzer = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, ctx.currentTime);
+      osc.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } catch(e) {}
+  };
+  // ----------------------------------
 
   const formRef = useRef(null);
 
@@ -133,11 +162,13 @@ export default function Inventory() {
   const openModal = (product = null) => {
     setEditingProduct(product);
     setIsSerialized(product?.is_serialized == 1);
-    
     setItemType(product?.item_type || 'product'); 
-    
     setInitialQty(0);
-    setSerialNumbers('');
+    
+    // --- REFINED: Reset Scanner states ---
+    setScannedSerials([]);
+    setCurrentScan('');
+    
     setIsModalOpen(true);
   };
 
@@ -145,6 +176,38 @@ export default function Inventory() {
     setIsModalOpen(false);
     setEditingProduct(null);
   };
+
+  // --- NEW: Event-Driven Scanner Interceptor ---
+  const handleScan = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Stop form from submitting!
+      
+      const val = currentScan.trim();
+      if (!val) return;
+
+      // Check 1: Duplicate?
+      if (scannedSerials.includes(val)) {
+        playBuzzer();
+        Toast.fire({ icon: 'error', title: 'Duplicate Serial!' });
+        setCurrentScan('');
+        return;
+      }
+
+      // Check 2: Limit Reached?
+      if (scannedSerials.length >= requiredSerialCount) {
+        playBuzzer();
+        Toast.fire({ icon: 'error', title: 'Scan Limit Reached!' });
+        setCurrentScan('');
+        return;
+      }
+
+      // Success! Add it, beep, and clear input
+      setScannedSerials([...scannedSerials, val]);
+      playBeep();
+      setCurrentScan('');
+    }
+  };
+  // ---------------------------------------------
 
   // SMART LOGIC: Determine if we need to ask for serials right now
   const isMigratingToSerialized = editingProduct && editingProduct.is_serialized != 1 && isSerialized && editingProduct.stock_quantity > 0;
@@ -180,18 +243,9 @@ export default function Inventory() {
     // ---------------------------------------------------
 
     if (needsSerialsNow) {
-      const serialsList = serialNumbers.split(/[\n,]+/).map(s => s.trim()).filter(s => s);
-      
-      if (serialsList.length !== requiredSerialCount) {
-        return Toast.fire({ icon: 'error', title: `Please provide exactly ${requiredSerialCount} serial numbers.` });
+      if (scannedSerials.length !== requiredSerialCount) {
+        return Toast.fire({ icon: 'error', title: `Please scan exactly ${requiredSerialCount} serial numbers.` });
       }
-
-      // --- PHASE 3: FRONTEND DUPLICATE CHECK ---
-      const uniqueSerials = new Set(serialsList);
-      if (uniqueSerials.size !== serialsList.length) {
-        return Swal.fire('Duplicate Input', 'You have entered duplicate serial numbers in the box. Each line must be a unique barcode.', 'error');
-      }
-      // -----------------------------------------
     }
 
     setIsSubmitting(true);
@@ -200,8 +254,7 @@ export default function Inventory() {
     if (editingProduct) formData.append('id', editingProduct.id);
     
     if (needsSerialsNow) {
-      const serialsList = serialNumbers.split(/[\n,]+/).map(s => s.trim()).filter(s => s);
-      formData.append('serials', JSON.stringify(serialsList));
+      formData.append('serials', JSON.stringify(scannedSerials));
     }
 
     formData.append('status', editingProduct ? (editingProduct.status || 'Active') : 'Active');
@@ -435,12 +488,12 @@ export default function Inventory() {
                   {itemType === 'product' && (
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-1">Buy Price (Rwf)</label>
-                      <input type="number" name="buy_price" defaultValue={editingProduct?.buy_price || ''} step="0.01" required className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                      <input type="number" name="buy_price" defaultValue={editingProduct?.buy_price || ''} step="0.01" min="0" required className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                     </div>
                   )}
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Sell Price / Rate (Rwf)</label>
-                    <input type="number" name="sell_price" defaultValue={editingProduct?.sell_price || ''} step="0.01" required className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                    <input type="number" name="sell_price" defaultValue={editingProduct?.sell_price || ''} step="0.01" min="0" required className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
                   </div>
                 </div>
 
@@ -501,23 +554,48 @@ export default function Inventory() {
 
                     {/* DYNAMIC SERIAL ENTRY BOX */}
                     {needsSerialsNow && (
-                      <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-xl animate-in fade-in duration-300">
-                        <label className="block text-xs font-bold text-slate-700 mb-2">
-                          Enter Serial Numbers <span className="text-blue-600">({requiredSerialCount} required)</span>
-                        </label>
-                        <textarea
-                          value={serialNumbers}
-                          onChange={(e) => setSerialNumbers(e.target.value)}
-                          placeholder="Paste barcodes or IMEIs here, separated by commas or new lines..."
-                          className="w-full px-3 py-2 text-xs border border-blue-200 rounded-md outline-none focus:border-blue-500 bg-white placeholder-slate-400 custom-scrollbar"
-                          rows="3"
-                          required
-                        ></textarea>
+                      <div className="mt-4 p-4 bg-slate-50 border border-slate-200 rounded-xl animate-in fade-in duration-300">
+                        <div className="flex justify-between items-end mb-2">
+                          <label className="block text-xs font-bold text-slate-700">
+                            Scan Serial Numbers
+                          </label>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${scannedSerials.length === requiredSerialCount ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {scannedSerials.length} / {requiredSerialCount} Scanned
+                          </span>
+                        </div>
+                        
+                        {/* The Interceptor Input */}
+                        <input
+                          type="text"
+                          value={currentScan}
+                          onChange={(e) => setCurrentScan(e.target.value)}
+                          onKeyDown={handleScan}
+                          disabled={scannedSerials.length >= requiredSerialCount}
+                          placeholder={scannedSerials.length >= requiredSerialCount ? "Scan limit reached" : "Click here and scan barcode..."}
+                          className="w-full px-3 py-2.5 text-sm border border-blue-200 rounded-lg outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 bg-white placeholder-slate-400 shadow-inner transition-all disabled:bg-slate-100 disabled:cursor-not-allowed"
+                        />
+
                         {isMigratingToSerialized && (
                           <p className="text-[10px] text-amber-600 mt-2 font-medium leading-tight">
                             * You are enabling serialization for an existing product. Please provide serials for the {requiredSerialCount} items currently in stock.
                           </p>
                         )}
+
+                        {/* The Visual Tag Grid */}
+                        <div className="mt-3 flex flex-wrap gap-2 max-h-40 overflow-y-auto custom-scrollbar p-1">
+                          {scannedSerials.map((serial, idx) => (
+                            <div key={idx} className="flex items-center gap-1.5 bg-white border border-slate-200 shadow-sm px-2.5 py-1.5 rounded-md text-xs font-bold text-slate-700 animate-in zoom-in duration-200">
+                              {serial}
+                              <button 
+                                type="button" 
+                                onClick={() => setScannedSerials(scannedSerials.filter((_, i) => i !== idx))} 
+                                className="text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </>

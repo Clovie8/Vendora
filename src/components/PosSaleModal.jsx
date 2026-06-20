@@ -168,21 +168,33 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
     } catch(e) {}
   };
 
-  // ✅ TO THIS (Added item_type checks):
+  // --- NEW: Error Buzzer ---
+  const playBuzzer = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, ctx.currentTime);
+      osc.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } catch(e) {}
+  };
+
   const addToCart = (product) => {
     if (product.item_type !== 'service' && product.stock_quantity <= 0) return Toast.fire({ icon: 'error', title: 'Out of stock!' });
     
     setCart(prevCart => {
       const existing = prevCart.find(item => item.id === product.id);
       if (existing) {
-        // Bypass maximum cart limit for services
         if (product.item_type !== 'service' && existing.cartQty >= product.stock_quantity) {
            Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
            return prevCart;
         }
         return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1 } : item);
       }
-      return [...prevCart, { ...product, cartQty: 1, serialText: '' }];
+      // REFINED: Use an array for serials
+      return [...prevCart, { ...product, cartQty: 1, scannedSerials: [] }];
     });
     setPosSearch('');
   };
@@ -198,17 +210,32 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
            return prevCart;
         }
         
-        const currentSerials = existing.serialText ? existing.serialText.split(/[\n,]+/).map(s => s.trim()).filter(s => s) : [];
+        // REFINED: Use array logic
+        const currentSerials = existing.scannedSerials || [];
         if (currentSerials.includes(serialNumber)) {
            Toast.fire({ icon: 'warning', title: 'Serial already scanned in cart!' });
            return prevCart;
         }
 
-        const newSerialText = existing.serialText ? existing.serialText + '\n' + serialNumber : serialNumber;
-        return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, serialText: newSerialText } : item);
+        const newSerials = [...currentSerials, serialNumber];
+        return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, scannedSerials: newSerials } : item);
       }
-      return [...prevCart, { ...product, cartQty: 1, serialText: serialNumber }];
+      // REFINED: Initialize with array
+      return [...prevCart, { ...product, cartQty: 1, scannedSerials: [serialNumber] }];
     });
+  };
+
+  const updateCartQty = (id, newQty) => {
+    if (newQty < 1) return setCart(cart.filter(item => item.id !== id));
+    const prod = products.find(p => p.id === id);
+    if (prod && prod.item_type !== 'service' && newQty > prod.stock_quantity) return Toast.fire({ icon: 'error', title: `Max stock is ${prod.stock_quantity}` });
+    
+    setCart(cart.map(item => item.id === id ? { 
+      ...item, 
+      cartQty: newQty,
+      // REFINED: Safely truncate the serials array if they reduce the quantity!
+      scannedSerials: (item.scannedSerials || []).slice(0, newQty) 
+    } : item));
   };
 
   const handleSearchKeyDown = async (e) => {
@@ -283,14 +310,6 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
   );
   
   const cartTotal = cart.reduce((sum, item) => sum + (item.sell_price * item.cartQty), 0);
-  
-  // ✅ TO THIS (Added item_type check):
-  const updateCartQty = (id, newQty) => {
-    if (newQty < 1) return setCart(cart.filter(item => item.id !== id));
-    const prod = products.find(p => p.id === id);
-    if (prod && prod.item_type !== 'service' && newQty > prod.stock_quantity) return Toast.fire({ icon: 'error', title: `Max stock is ${prod.stock_quantity}` });
-    setCart(cart.map(item => item.id === id ? { ...item, cartQty: newQty } : item));
-  };
 
   const updateCartPrice = (id, newPrice) => {
     setCart(cart.map(item => item.id === id ? { ...item, sell_price: newPrice } : item));
@@ -343,6 +362,39 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
     printWindow.document.close();
   };
 
+  // --- NEW: Per-Item Event-Driven Scanner ---
+  const handleItemScan = (e, item) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const val = e.target.value.trim();
+      if (!val) return;
+
+      const currentSerials = item.scannedSerials || [];
+
+      // Check 1: Duplicate?
+      if (currentSerials.includes(val)) {
+        playBuzzer();
+        Toast.fire({ icon: 'error', title: 'Duplicate Serial in this box!' });
+        e.target.value = ''; // Instantly clear input
+        return;
+      }
+
+      // Check 2: Limit Reached?
+      if (currentSerials.length >= item.cartQty) {
+        playBuzzer();
+        Toast.fire({ icon: 'error', title: 'Scan limit reached for this item!' });
+        e.target.value = '';
+        return;
+      }
+
+      // Success! Add it, beep, and clear input
+      const newSerials = [...currentSerials, val];
+      setCart(cart.map(i => i.id === item.id ? { ...i, scannedSerials: newSerials } : i));
+      playBeep();
+      e.target.value = '';
+    }
+  };
+
   const handleMultiCheckout = async () => {
     if (cart.length === 0) return;
 
@@ -383,18 +435,15 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
       return Toast.fire({ icon: 'error', title: 'Please select a deadline date to clear the debt!' });
     }
 
+
     for (let item of cart) {
       if (item.is_serialized == 1) {
-        const serials = item.serialText ? item.serialText.split(/[\n,]+/).map(s => s.trim()).filter(s => s) : [];
+        const serials = item.scannedSerials || [];
+        
         if (serials.length !== item.cartQty) {
-          return Swal.fire('Error', `Need exactly ${item.cartQty} serials for ${item.name}. You entered ${serials.length}.`, 'error');
+          return Swal.fire('Error', `Need exactly ${item.cartQty} serials for ${item.name}. You scanned ${serials.length}.`, 'error');
         }
         
-        const uniqueSerials = new Set(serials);
-        if (uniqueSerials.size !== serials.length) {
-          return Swal.fire('Duplicate Input', `You scanned duplicate serial numbers for ${item.name}.`, 'error');
-        }
-
         item.parsedSerials = serials; 
       }
     }
@@ -586,18 +635,50 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
                       </div>
                     </div>  
                   </div>
+                  {/* --- REFINED: DYNAMIC SCANNER UI --- */}
                   {item.is_serialized == 1 && (
                     <div className="w-full pt-2 border-t border-slate-100">
-                      <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1">Scan <span className="text-red-500">{item.cartQty}</span> Serial(s)</label>
-                      <textarea 
-                        placeholder={`Scan/Type exactly ${item.cartQty} serials...`}
-                        value={item.serialText || ''}
-                        onChange={(e) => setCart(cart.map(i => i.id === item.id ? {...i, serialText: e.target.value} : i))}
-                        className="w-full px-2.5 py-1.5 text-xs border border-red-200 rounded-lg outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/20 bg-white placeholder-slate-300 custom-scrollbar"
-                        rows="2"
-                      ></textarea>
+                      <div className="flex justify-between items-end mb-1.5">
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wide">
+                          Scan <span className="text-red-500">{item.cartQty}</span> Serial(s)
+                        </label>
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                          (item.scannedSerials?.length || 0) === item.cartQty ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {(item.scannedSerials?.length || 0)} / {item.cartQty} Scanned
+                        </span>
+                      </div>
+                      
+                      {/* The Interceptor Input (Uncontrolled for max speed) */}
+                      <input 
+                        type="text"
+                        onKeyDown={(e) => handleItemScan(e, item)}
+                        disabled={(item.scannedSerials?.length || 0) >= item.cartQty}
+                        placeholder={(item.scannedSerials?.length || 0) >= item.cartQty ? "Scan limit reached" : "Click & scan barcode..."}
+                        className="w-full px-2.5 py-1.5 text-xs border border-red-200 rounded-lg outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/20 bg-white placeholder-slate-400 shadow-inner disabled:bg-slate-50 disabled:cursor-not-allowed transition-all"
+                      />
+                      
+                      {/* The Visual Tag Grid */}
+                      {item.scannedSerials && item.scannedSerials.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar p-0.5">
+                          {item.scannedSerials.map((serial, idx) => (
+                            <div key={idx} className="flex items-center gap-1 bg-white border border-slate-200 shadow-sm px-1.5 py-1 rounded text-[10px] font-bold text-slate-700 animate-in zoom-in duration-200">
+                              {serial}
+                              <button 
+                                type="button" 
+                                onClick={() => setCart(cart.map(i => i.id === item.id ? {...i, scannedSerials: i.scannedSerials.filter((_, sIdx) => sIdx !== idx)} : i))}
+                                className="text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                title="Remove serial"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
+                  {/* -------------------------------------- */}
                 </div>
               ))
             )}
