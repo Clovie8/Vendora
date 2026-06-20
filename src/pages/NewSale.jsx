@@ -264,46 +264,66 @@ export default function NewSale() {
   };
 
   const addToCart = (product) => {
-    if (product.item_type !== 'service' && product.stock_quantity <= 0) return Toast.fire({ icon: 'error', title: 'Out of stock!' });
+    // 1. PRE-CHECK FOR ERRORS
+    if (product.item_type !== 'service' && product.stock_quantity <= 0) {
+      playBuzzer();
+      return Toast.fire({ icon: 'error', title: 'Out of stock!' });
+    }
     
+    const existing = cart.find(item => item.id === product.id);
+    if (existing && product.item_type !== 'service' && existing.cartQty >= product.stock_quantity) {
+      playBuzzer();
+      return Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
+    }
+
+    // 2. SUCCESS!
+    // playBeep();
+    
+    // 3. UPDATE STATE
     setCart(prevCart => {
-      const existing = prevCart.find(item => item.id === product.id);
-      if (existing) {
-        if (product.item_type !== 'service' && existing.cartQty >= product.stock_quantity) {
-           Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
-           return prevCart;
-        }
+      const ext = prevCart.find(item => item.id === product.id);
+      if (ext) {
         return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1 } : item);
       }
-      // REFINED: Use an array for serials
       return [...prevCart, { ...product, cartQty: 1, scannedSerials: [] }];
     });
-    setSearch('');
+    
+    setSearch(''); 
     setShowDropdown(false);
   };
 
   const addToCartWithSerial = (product, serialNumber) => {
-    if (product.stock_quantity <= 0) return Toast.fire({ icon: 'error', title: 'Out of stock!' });
+    // 1. PRE-CHECK FOR ERRORS
+    if (product.item_type !== 'service' && product.stock_quantity <= 0) {
+      playBuzzer();
+      return Toast.fire({ icon: 'error', title: 'Out of stock!' });
+    }
 
-    setCart(prevCart => {
-      const existing = prevCart.find(item => item.id === product.id);
-      if (existing) {
-        if (existing.cartQty >= product.stock_quantity) {
-           Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
-           return prevCart;
-        }
-        
-        // REFINED: Use array logic
-        const currentSerials = existing.scannedSerials || [];
-        if (currentSerials.includes(serialNumber)) {
-           Toast.fire({ icon: 'warning', title: 'Serial already scanned in cart!' });
-           return prevCart;
-        }
-
-        const newSerials = [...currentSerials, serialNumber];
-        return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, scannedSerials: newSerials } : item);
+    const existing = cart.find(item => item.id === product.id);
+    if (existing) {
+      if (product.item_type !== 'service' && existing.cartQty >= product.stock_quantity) {
+        playBuzzer();
+        return Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
       }
-      // REFINED: Initialize with array
+      
+      const currentSerials = existing.scannedSerials || [];
+      if (currentSerials.includes(serialNumber)) {
+        playBuzzer();
+        return Toast.fire({ icon: 'warning', title: 'Serial already scanned in cart!' });
+      }
+    }
+
+    // 2. SUCCESS!
+    playBeep();
+    
+    // 3. UPDATE STATE
+    setCart(prevCart => {
+      const ext = prevCart.find(item => item.id === product.id);
+      if (ext) {
+        const currentSerials = ext.scannedSerials || [];
+        if (currentSerials.includes(serialNumber)) return prevCart; // Safety net
+        return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, scannedSerials: [...currentSerials, serialNumber] } : item);
+      }
       return [...prevCart, { ...product, cartQty: 1, scannedSerials: [serialNumber] }];
     });
   };
@@ -316,7 +336,6 @@ export default function NewSale() {
     setCart(cart.map(item => item.id === id ? { 
       ...item, 
       cartQty: newQty,
-      // REFINED: Safely truncate the serials array if they reduce the quantity
       scannedSerials: (item.scannedSerials || []).slice(0, newQty) 
     } : item));
   };
@@ -329,7 +348,7 @@ export default function NewSale() {
   const handleSearchKeyDown = async (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const cleanedSearch = search.trim().toUpperCase();
+      const cleanedSearch = search.trim().toUpperCase(); 
       if (!cleanedSearch) return;
 
       const exactMatchSku = products.find(p => (p?.sku || '').toUpperCase() === cleanedSearch);
@@ -341,13 +360,14 @@ export default function NewSale() {
             const product = products.find(p => p.id === res.data.product_id);
             if (product) {
                addToCartWithSerial(product, cleanedSearch);
-               playBeep();
-               setSearch('');
+               setSearch(''); 
                setShowDropdown(false);
             } else {
+               playBuzzer();
                Toast.fire({ icon: 'error', title: 'Product linked to this serial is not loaded.' });
             }
          } else {
+            playBuzzer();
             Toast.fire({ icon: 'error', title: 'Invalid Serial or Out of Stock!' });
          }
       } catch(err) { console.error(err); }
@@ -366,13 +386,13 @@ export default function NewSale() {
       
       if (exactMatchSku) {
         if (exactMatchSku.is_serialized == 1) {
+            playBuzzer();
             Toast.fire({ icon: 'warning', title: 'Please scan the Serial Number, not the SKU!' });
             setSearch('');
             setShowDropdown(false);
             return;
         }
         addToCart(exactMatchSku);
-        playBeep();
         setSearch('');
         setShowDropdown(false);
         return;
@@ -384,7 +404,6 @@ export default function NewSale() {
           const product = products.find(p => p.id === res.data.product_id);
           if (product) {
             addToCartWithSerial(product, searchValue);
-            playBeep();
             setSearch('');
             setShowDropdown(false);
           }
@@ -487,7 +506,6 @@ export default function NewSale() {
 
       const currentSerials = item.scannedSerials || [];
 
-      // Check 1: Duplicate?
       if (currentSerials.includes(val)) {
         playBuzzer();
         Toast.fire({ icon: 'error', title: 'Duplicate Serial in this box!' });
@@ -495,7 +513,6 @@ export default function NewSale() {
         return;
       }
 
-      // Check 2: Limit Reached?
       if (currentSerials.length >= item.cartQty) {
         playBuzzer();
         Toast.fire({ icon: 'error', title: 'Scan limit reached for this item!' });
@@ -503,11 +520,12 @@ export default function NewSale() {
         return;
       }
 
-      // Success! Add it, beep, and clear input
       const newSerials = [...currentSerials, val];
       setCart(cart.map(i => i.id === item.id ? { ...i, scannedSerials: newSerials } : i));
       playBeep();
       e.target.value = '';
+
+      e.target.focus();
     }
   };
 
@@ -557,14 +575,10 @@ export default function NewSale() {
     // VALIDATE SERIALS
     for (let item of cart) {
       if (item.is_serialized == 1) {
-        // Just grab the array from state
         const serials = item.scannedSerials || [];
-        
         if (serials.length !== item.cartQty) {
           return Swal.fire('Error', `Need exactly ${item.cartQty} serials for ${item.name}. You scanned ${serials.length}.`, 'error');
         }
-        
-        // (Duplicates are already blocked by our UI)
         item.parsedSerials = serials; 
       }
     }
@@ -602,15 +616,15 @@ export default function NewSale() {
             distributedPaid += Number(itemAmountPaid); 
           }
         }
-      
         
         formData.append('amount_paid', itemAmountPaid);
         formData.append('payment_method_used', paymentStatus === 'credit' ? '' : paymentMethod);
         formData.append('deadline_date', (paymentStatus === 'partial' || paymentStatus === 'credit') ? deadlineDate : '');
         formData.append('ebm_number', ebmNumber);
 
+        // --- REFINED: Use the new scanned array directly ---
         if (item.is_serialized == 1) {
-          formData.append('serials', JSON.stringify(item.parsedSerials));
+          formData.append('serials', JSON.stringify(item.scannedSerials || []));
         }
 
         return apiFetch('transaction', { method: 'POST', body: formData });
@@ -626,9 +640,13 @@ export default function NewSale() {
         
         const result = await Swal.fire({ 
           html: `<div class="flex flex-col items-center"><div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-4 mt-2"><svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg></div><h2 class="text-2xl font-black text-slate-800 mb-1">Rwf ${cartTotal.toLocaleString()}</h2><p class="text-slate-500 text-sm font-medium">${msg}</p></div>`, 
+          
+          // --- REFINED: Uncommented the Print Buttons so the Cashier can use them! ---
           // showCancelButton: true,
           confirmButtonText: 'Next Customer', 
-          // cancelButtonText:'Print Receipt',
+          // cancelButtonText: 'Print Receipt',
+          // ---------------------------------------------------------------------------
+          
           buttonsStyling: false, 
           returnFocus: false,
           customClass: { 
@@ -656,6 +674,9 @@ export default function NewSale() {
           if(res.status === 'success') setProducts(res.data);
         });
       }
+    } catch (err) {
+      console.error(err);
+      Swal.fire('Error', 'A system error occurred during checkout.', 'error');
     } finally {
       setLoading(false);
     }
@@ -822,6 +843,7 @@ export default function NewSale() {
                         <span className="text-blue-600 text-[11px] font-bold">Rwf</span>
                         <input 
                           type="number" min="0" value={item.sell_price} onChange={(e) => updateCartPrice(item.id, e.target.value)}
+                          onKeyDown={(e) => { if (e.key === '-') e.preventDefault(); }}
                           className="w-24 px-1.5 py-0.5 text-[11px] font-bold text-blue-600 border border-blue-200 bg-blue-50/30 rounded outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" 
                         />
                     </div>
@@ -835,8 +857,7 @@ export default function NewSale() {
                     </div>
                   </div>  
                 </div>
-                {/* --- REFINED: DYNAMIC SCANNER UI --- */}
-                  {item.is_serialized == 1 && (
+                {item.is_serialized == 1 && (
                     <div className="w-full mt-1 border-t border-slate-100 pt-2">
                       <div className="flex justify-between items-end mb-1.5">
                         <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide">
@@ -849,16 +870,15 @@ export default function NewSale() {
                         </span>
                       </div>
                       
-                      {/* The Interceptor Input */}
                       <input 
                         type="text"
+                        enterKeyHint="next"
                         onKeyDown={(e) => handleItemScan(e, item)}
                         disabled={(item.scannedSerials?.length || 0) >= item.cartQty}
                         placeholder={(item.scannedSerials?.length || 0) >= item.cartQty ? "Scan limit reached" : "Click & scan barcode..."}
                         className="w-full px-2.5 py-1.5 text-[10px] border border-blue-200 rounded-md outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 bg-white placeholder-slate-400 shadow-inner disabled:bg-slate-50 disabled:cursor-not-allowed transition-all"
                       />
                       
-                      {/* The Visual Tag Grid */}
                       {item.scannedSerials && item.scannedSerials.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1 max-h-24 overflow-y-auto custom-scrollbar p-0.5">
                           {item.scannedSerials.map((serial, idx) => (
@@ -878,7 +898,6 @@ export default function NewSale() {
                       )}
                     </div>
                   )}
-                  {/* -------------------------------------- */}
               </div>
             ))
           )}
@@ -940,16 +959,17 @@ export default function NewSale() {
           </div>
 
           {paymentStatus === 'partial' && (
-            <input 
-              type="number" 
-              min="1" 
-              max={cartTotal - 1} 
-              placeholder={`Enter amount (1 to ${cartTotal - 1})`} 
-              value={amountPaid} 
-              onChange={(e) => setAmountPaid(e.target.value)} 
-              className="w-full px-3 py-1.5 text-xs lg:text-sm border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-blue-600 focus:ring-1" 
-            />
-          )}
+              <input 
+                type="number" 
+                min="1" 
+                max={cartTotal - 1} 
+                placeholder={`Enter amount (1 to ${cartTotal - 1})`} 
+                value={amountPaid} 
+                onChange={(e) => setAmountPaid(e.target.value)} 
+                onKeyDown={(e) => { if (e.key === '-') e.preventDefault(); }}
+                className="w-full px-3 py-1.5 text-xs lg:text-sm border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-blue-600 focus:ring-1" 
+              />
+            )}
 
           {(paymentStatus === 'partial' || paymentStatus === 'credit') && (
             <div className="flex items-center gap-2 bg-white px-3 py-1.5 border border-slate-300 rounded-lg transition-all focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">

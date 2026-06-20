@@ -287,6 +287,8 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
       setCart(cart.map(i => i.id === item.id ? { ...i, scannedSerials: newSerials } : i));
       playBeep();
       e.target.value = '';
+
+      e.target.focus();
     }
   };
 
@@ -531,6 +533,7 @@ export default function PosRestockModal({ isOpen, onClose, onSuccess, businessSe
                       {/* The Interceptor Input (Uncontrolled for max speed) */}
                       <input 
                         type="text"
+                        enterKeyHint="next"
                         onKeyDown={(e) => handleItemScan(e, item)}
                         disabled={(item.scannedSerials?.length || 0) >= item.cartQty}
                         placeholder={(item.scannedSerials?.length || 0) >= item.cartQty ? "Scan limit reached" : "Click & scan barcode..."}

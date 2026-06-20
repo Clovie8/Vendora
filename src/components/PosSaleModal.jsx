@@ -182,45 +182,67 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
   };
 
   const addToCart = (product) => {
-    if (product.item_type !== 'service' && product.stock_quantity <= 0) return Toast.fire({ icon: 'error', title: 'Out of stock!' });
+    // 1. PRE-CHECK FOR ERRORS
+    if (product.item_type !== 'service' && product.stock_quantity <= 0) {
+      playBuzzer();
+      return Toast.fire({ icon: 'error', title: 'Out of stock!' });
+    }
     
+    const existing = cart.find(item => item.id === product.id);
+    if (existing && product.item_type !== 'service' && existing.cartQty >= product.stock_quantity) {
+      playBuzzer();
+      return Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
+    }
+
+    // 2. SUCCESS!
+    // playBeep();
+    
+    // 3. UPDATE STATE
     setCart(prevCart => {
-      const existing = prevCart.find(item => item.id === product.id);
-      if (existing) {
-        if (product.item_type !== 'service' && existing.cartQty >= product.stock_quantity) {
-           Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
-           return prevCart;
-        }
+      const ext = prevCart.find(item => item.id === product.id);
+      if (ext) {
         return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1 } : item);
       }
-      // REFINED: Use an array for serials
       return [...prevCart, { ...product, cartQty: 1, scannedSerials: [] }];
     });
+    
+    // NOTE: In NewSale.jsx use setSearch(''), in PosSaleModal.jsx use setPosSearch('')
     setPosSearch('');
+    setShowDropdown(false);
   };
 
   const addToCartWithSerial = (product, serialNumber) => {
-    if (product.stock_quantity <= 0) return Toast.fire({ icon: 'error', title: 'Out of stock!' });
+    // 1. PRE-CHECK FOR ERRORS
+    if (product.item_type !== 'service' && product.stock_quantity <= 0) {
+      playBuzzer();
+      return Toast.fire({ icon: 'error', title: 'Out of stock!' });
+    }
 
-    setCart(prevCart => {
-      const existing = prevCart.find(item => item.id === product.id);
-      if (existing) {
-        if (existing.cartQty >= product.stock_quantity) {
-           Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
-           return prevCart;
-        }
-        
-        // REFINED: Use array logic
-        const currentSerials = existing.scannedSerials || [];
-        if (currentSerials.includes(serialNumber)) {
-           Toast.fire({ icon: 'warning', title: 'Serial already scanned in cart!' });
-           return prevCart;
-        }
-
-        const newSerials = [...currentSerials, serialNumber];
-        return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, scannedSerials: newSerials } : item);
+    const existing = cart.find(item => item.id === product.id);
+    if (existing) {
+      if (product.item_type !== 'service' && existing.cartQty >= product.stock_quantity) {
+        playBuzzer();
+        return Toast.fire({ icon: 'error', title: `Only ${product.stock_quantity} available.` });
       }
-      // REFINED: Initialize with array
+      
+      const currentSerials = existing.scannedSerials || [];
+      if (currentSerials.includes(serialNumber)) {
+        playBuzzer();
+        return Toast.fire({ icon: 'warning', title: 'Serial already scanned in cart!' });
+      }
+    }
+
+    // 2. SUCCESS!
+    playBeep();
+    
+    // 3. UPDATE STATE
+    setCart(prevCart => {
+      const ext = prevCart.find(item => item.id === product.id);
+      if (ext) {
+        const currentSerials = ext.scannedSerials || [];
+        if (currentSerials.includes(serialNumber)) return prevCart; // Safety net
+        return prevCart.map(item => item.id === product.id ? { ...item, cartQty: item.cartQty + 1, scannedSerials: [...currentSerials, serialNumber] } : item);
+      }
       return [...prevCart, { ...product, cartQty: 1, scannedSerials: [serialNumber] }];
     });
   };
@@ -238,14 +260,17 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
     } : item));
   };
 
+  // SMART SCANNER INTERCEPTOR (Keydown)
   const handleSearchKeyDown = async (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const cleanedSearch = posSearch.trim().toUpperCase();
+      
+      // Use 'search' for NewSale, 'posSearch' for PosSaleModal
+      const cleanedSearch = search.trim().toUpperCase(); 
       if (!cleanedSearch) return;
 
       const exactMatchSku = products.find(p => (p?.sku || '').toUpperCase() === cleanedSearch);
-      if (exactMatchSku) return;
+      if (exactMatchSku) return; 
 
       try {
          const res = await apiFetch(`get_product_by_serial&serial=${encodeURIComponent(cleanedSearch)}`);
@@ -253,18 +278,24 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
             const product = products.find(p => p.id === res.data.product_id);
             if (product) {
                addToCartWithSerial(product, cleanedSearch);
-               playBeep();
-               setPosSearch('');
+               // playBeep() REMOVED! It is now inside addToCartWithSerial!
+               
+               // Use 'setSearch' for NewSale, 'setPosSearch' for PosSaleModal
+               setSearch(''); 
+               setShowDropdown(false);
             } else {
+               playBuzzer();
                Toast.fire({ icon: 'error', title: 'Product linked to this serial is not loaded.' });
             }
          } else {
+            playBuzzer();
             Toast.fire({ icon: 'error', title: 'Invalid Serial or Out of Stock!' });
          }
       } catch(err) { console.error(err); }
     }
   };
 
+  // SMART DEBOUNCE SEARCH ENGINE (Typing/Paste)
   useEffect(() => {
     if (!posSearch) return;
 
@@ -276,13 +307,17 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
       
       if (exactMatchSku) {
         if (exactMatchSku.is_serialized == 1) {
+            playBuzzer(); // <-- REFINED: Added Buzzer
             Toast.fire({ icon: 'warning', title: 'Please scan the Serial Number, not the SKU!' });
             setPosSearch('');
+            setShowDropdown(false);
             return;
         }
         addToCart(exactMatchSku);
-        playBeep();
+        // playBeep() REMOVED! It's handled by addToCart now.
+        
         setPosSearch('');
+        setShowDropdown(false);
         return;
       }
 
@@ -292,8 +327,10 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
           const product = products.find(p => p.id === res.data.product_id);
           if (product) {
             addToCartWithSerial(product, searchValue);
-            playBeep();
+            // playBeep() REMOVED! It's handled by addToCartWithSerial now.
+            
             setPosSearch('');
+            setShowDropdown(false);
           }
         }
       } catch (err) {}
@@ -392,6 +429,8 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
       setCart(cart.map(i => i.id === item.id ? { ...i, scannedSerials: newSerials } : i));
       playBeep();
       e.target.value = '';
+
+      e.target.focus();
     }
   };
 
@@ -622,6 +661,9 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
                           min="0" 
                           value={item.sell_price} 
                           onChange={(e) => updateCartPrice(item.id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === '-') e.preventDefault();
+                          }}
                           className="w-20 px-1.5 py-1 text-xs font-bold text-red-600 border border-red-200 bg-red-50/50 rounded flex-1 outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/20" 
                         />
                       </div>
@@ -652,6 +694,7 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
                       {/* The Interceptor Input (Uncontrolled for max speed) */}
                       <input 
                         type="text"
+                        enterKeyHint="next"
                         onKeyDown={(e) => handleItemScan(e, item)}
                         disabled={(item.scannedSerials?.length || 0) >= item.cartQty}
                         placeholder={(item.scannedSerials?.length || 0) >= item.cartQty ? "Scan limit reached" : "Click & scan barcode..."}
@@ -744,6 +787,9 @@ export default function PosSaleModal({ isOpen, onClose, onSuccess, businessSetti
                 placeholder={`Enter amount (1 to ${cartTotal - 1})`} 
                 value={amountPaid} 
                 onChange={(e) => setAmountPaid(e.target.value)} 
+                onKeyDown={(e) => {
+                  if (e.key === '-') e.preventDefault();
+                }}
                 className="w-full px-3 py-1.5 text-xs lg:text-sm border border-slate-300 rounded-lg outline-none font-bold text-slate-800 focus:border-blue-600 focus:ring-1" 
               />
             )}
