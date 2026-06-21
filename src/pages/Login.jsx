@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { apiFetch } from '../config/api';
 import Swal from 'sweetalert2';
@@ -29,6 +29,11 @@ export default function Login() {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
 
+  // THE SILENT LOGOUT SAFETY NET 
+  useEffect(() => {
+    apiFetch('logout', { method: 'POST' }).catch(() => {});
+  }, []);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -44,7 +49,12 @@ export default function Login() {
       });
 
       if (res.status === 'success') {
-        navigate('/', { replace: true });
+
+        // THE BROWSER RACE CONDITION
+        setTimeout(() => {
+          navigate('/', { replace: true });
+        }, 150);
+        
       } else {
         // 2. FIRE THE TOAST INSTEAD OF THE MODAL
         Toast.fire({

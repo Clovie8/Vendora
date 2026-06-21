@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { hqFetch } from '../config/hq-api';
 import Swal from 'sweetalert2';
@@ -16,6 +16,13 @@ const Toast = Swal.mixin({
 export default function HQLogin() {
   useDocumentTitle('Vendora HQ | Login');
   const navigate = useNavigate();
+
+  // --- REFINEMENT 1: THE SILENT LOGOUT SAFETY NET ---
+  // Forcefully destroy any old sessions the moment this screen loads
+  useEffect(() => {
+    hqFetch('logout', { method: 'POST' }).catch(() => {});
+  }, []);
+  // --------------------------------------------------
 
   // Step 1 = Login, Step 2 = 2FA Code
   const [step, setStep] = useState(1); 
@@ -76,7 +83,10 @@ export default function HQLogin() {
       
       if (res.status === 'success') {
         Toast.fire({ icon: 'success', title: 'Security Cleared. Welcome to HQ.' });
-        navigate('/hq-admin'); 
+        
+        setTimeout(() => {
+          navigate('/hq-admin', { replace: true }); 
+        }, 150);
       } else {
         Toast.fire({ icon: 'error', title: res.message || 'Verification failed.' });
       }
