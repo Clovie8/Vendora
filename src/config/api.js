@@ -1,7 +1,7 @@
 // src/config/api.js
 import Swal from 'sweetalert2';
 
-export const API_BASE_URL = 'https://vendora-htcbbye5c0b3h8gn.southafricanorth-01.azurewebsites.net/';
+export const API_BASE_URL = 'https://erp-endpoint.onrender.com/';
 
 export const apiFetch = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;

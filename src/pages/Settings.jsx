@@ -308,7 +308,7 @@ export default function Settings() {
                 <div className="flex items-center gap-4 p-4 bg-white shadow-sm border border-slate-200/60 rounded-2xl transition-all hover:border-slate-300">
                   <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
                     {business.logo ? (
-                      <img src={`https://vendora-htcbbye5c0b3h8gn.southafricanorth-01.azurewebsites.net/backend/public/${business.logo}`} className="w-full h-full object-contain p-1" alt="Logo" />
+                      <img src={`https://erp-endpoint.onrender.com/backend/public/${business.logo}`} className="w-full h-full object-contain p-1" alt="Logo" />
                     ) : (
                       <span className="text-[9px] text-slate-400 font-bold uppercase text-center leading-tight p-2">Upload<br/>Logo</span>
                     )}
@@ -323,7 +323,7 @@ export default function Settings() {
                 <div className="flex items-center gap-4 p-4 bg-white shadow-sm border border-slate-200/60 rounded-2xl transition-all hover:border-slate-300">
                   <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center overflow-hidden shrink-0 shadow-inner">
                     {business.stamp_signature ? (
-                      <img src={`https://vendora-htcbbye5c0b3h8gn.southafricanorth-01.azurewebsites.net/backend/public/${business.stamp_signature}`} className="w-full h-full object-contain p-1" alt="Stamp" />
+                      <img src={`https://erp-endpoint.onrender.com/backend/public/${business.stamp_signature}`} className="w-full h-full object-contain p-1" alt="Stamp" />
                     ) : (
                       <span className="text-[9px] text-slate-400 font-bold uppercase text-center leading-tight p-2">Upload<br/>Stamp</span>
                     )}
